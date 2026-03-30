@@ -153,7 +153,7 @@ Benchmarked on Apple Silicon with real code-generation prompts.
 | Model | Before (Q8_0) | After (Q4_0) | Speedup | Size |
 |---|---|---|---|---|
 | deepseek-coder 1.3b | 30.4 tok/s · 24.6s avg | **60.4 tok/s · 5.9s avg** | **2× faster** | 45% smaller |
-| deepseek-coder 6.7b | ~11.8 tok/s · 95.0s avg | **22.2 tok/s · 49.7s avg** | **1.88× faster** | 46% smaller |
+| deepseek-coder 6.7b | 11.8 tok/s · 95.0s avg | **22.2 tok/s · 49.7s avg** | **1.88× faster** | 46% smaller |
 | qwen2.5-coder 1.5b | 30.8 tok/s · 26.2s avg | **45.1 tok/s · 26.1s avg** | **1.46× faster** | 40% smaller |
 
 **Real numbers. Real hardware. No cloud.**
