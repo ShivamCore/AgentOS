@@ -31,19 +31,17 @@
 
 ---
 
-## ⚡ Demo
+## ⚡ Live Terminal Demo
+Test the AgentOS intelligent execution pipeline completely natively without Docker using our built-in Rich terminal dashboard.
 
-> **Screenshot: DAG Visualiser** — real-time ReactFlow graph showing node-by-node execution
+```bash
+agentos demo --watch
+```
 
-![DAG Execution Demo](docs/assets/dag-demo.gif)
-
-> *Replace with your own recording — `make dev` then open http://localhost:3000*
-
-| What you see | What it means |
-|---|---|
-| Nodes turning green | Steps completing in the DAG |
-| Edges lighting up | Dependency resolution in real time |
-| Logs streaming | Direct stdout from the sandbox |
+**Real-time Features:**
+- 🟢 **Live DAG Execution**: Watch steps complete sequentially or in parallel.
+- ⚡ **Instant ETAs**: Heuristic timing countdowns for each operation.
+- 🧠 **Thought Streaming**: See the LLM's raw cognitive stream directly inside the protected sandbox.
 
 ---
 
