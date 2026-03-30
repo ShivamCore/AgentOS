@@ -1,0 +1,18 @@
+{
+  "title": "Stripe Webhook Handler",
+  "description": "Create a FastAPI endpoint that handles Stripe payment_intent.succeeded events. The endpoint must validate the Stripe-Signature header using HMAC-SHA256, reject replays older than 300 seconds, and idempotently log each successful payment to the database.",
+  "task_type": "create_api",
+  "tech_stack": ["Python", "FastAPI", "Stripe"],
+  "features": [
+    "Signature validation via Stripe-Signature header",
+    "Replay attack prevention (300s tolerance window)",
+    "Idempotent payment logging to SQLite",
+    "Structured error responses (400 for bad sig, 200 for known events)"
+  ],
+  "constraints": {
+    "max_time": 300,
+    "max_steps": 5,
+    "risk_level": "safe",
+    "file_scope": ["src/api/webhooks/"]
+  }
+}

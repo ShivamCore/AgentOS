@@ -1,0 +1,167 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# AgentOS — Local Development Stack
+# ═══════════════════════════════════════════════════════════════════════════════
+# Usage:
+#   docker compose up          → start all services
+#   docker compose up -d       → start detached
+#   docker compose logs -f api → tail API logs
+#   docker compose down -v     → stop + remove volumes (reset DB)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+services:
+  # ── FastAPI Application ──────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agentos-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app/backend:ro
+      - ./agent:/app/agent:ro
+      - ./agents:/app/agents:ro
+      - ./main.py:/app/main.py:ro
+      - workspace_data:/app/workspace
+    environment:
+      - DATABASE_URL=sqlite:///./workspace/agentos.db
+      - REDIS_URL=redis://redis:6379/0
+      - WORKSPACE_DIR=/app/workspace
+      - OLLAMA_URL=http://host.docker.internal:11434/api/generate
+      - OLLAMA_TAGS_URL=http://host.docker.internal:11434/api/tags
+      - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000
+      - MAX_WORKERS=4
+      - MAX_CONCURRENT_TASKS=10
+    command: >
+      python -m uvicorn backend.api.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --reload-dir /app/backend
+      --reload-dir /app/agent
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+      - frontend
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # ── Celery Worker ────────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agentos-worker
+    volumes:
+      - ./backend:/app/backend:ro
+      - ./agent:/app/agent:ro
+      - ./agents:/app/agents:ro
+      - workspace_data:/app/workspace
+    environment:
+      - DATABASE_URL=sqlite:///./workspace/agentos.db
+      - REDIS_URL=redis://redis:6379/0
+      - WORKSPACE_DIR=/app/workspace
+      - OLLAMA_URL=http://host.docker.internal:11434/api/generate
+      - OLLAMA_TAGS_URL=http://host.docker.internal:11434/api/tags
+    command: >
+      python -m celery -A backend.workers.celery_app worker
+      --loglevel=info
+      --concurrency=4
+      --max-tasks-per-child=50
+      -Q default,high_priority
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "python", "-m", "celery", "-A", "backend.workers.celery_app", "inspect", "active", "--timeout", "5"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  # ── Celery Beat Scheduler ───────────────────────────────────────────────────
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agentos-beat
+    volumes:
+      - ./backend:/app/backend:ro
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    command: >
+      python -m celery -A backend.workers.celery_app beat
+      --loglevel=info
+      --schedule=/tmp/celerybeat-schedule
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # ── Redis ────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: agentos-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Flower (Celery Monitoring) ───────────────────────────────────────────────
+  flower:
+    image: mher/flower:2.0.1
+    container_name: agentos-flower
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - FLOWER_PORT=5555
+      - FLOWER_BASIC_AUTH=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-changeme}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+      - frontend
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5555/healthcheck')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+# ── Volumes ──────────────────────────────────────────────────────────────────
+volumes:
+  workspace_data:
+    driver: local
+  redis_data:
+    driver: local
+
+# ── Networks ─────────────────────────────────────────────────────────────────
+networks:
+  backend:
+    driver: bridge
+    internal: true    # not accessible from host — only service-to-service
+  frontend:
+    driver: bridge    # API and Flower exposed here

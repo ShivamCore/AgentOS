@@ -1,0 +1,652 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+permissions:
+  contents: read
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# JOB 1 — SETUP: Install + cache all dependencies
+# ═══════════════════════════════════════════════════════════════════════════════
+jobs:
+  setup:
+    name: "📦 Setup & Cache"
+    runs-on: ubuntu-latest
+    outputs:
+      cache-hit: ${{ steps.pip-cache.outputs.cache-hit }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip packages
+        id: pip-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            venv/
+          key: pip-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-${{ env.PYTHON_VERSION }}-
+
+      - name: Create venv and install
+        if: steps.pip-cache.outputs.cache-hit != 'true'
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff mypy bandit pip-audit black pyre-check
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 2 — LINT: ruff + black + format check
+  # ═══════════════════════════════════════════════════════════════════════════
+  lint:
+    name: "🔍 Lint"
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Restore pip cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            venv/
+          key: pip-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+
+      - name: Install tools (if cache miss)
+        run: |
+          python -m venv venv 2>/dev/null || true
+          source venv/bin/activate
+          pip install ruff black 2>/dev/null || true
+
+      - name: Ruff lint
+        run: |
+          source venv/bin/activate
+          ruff check . --output-format=github
+
+      - name: Ruff format check
+        run: |
+          source venv/bin/activate
+          ruff format --check .
+
+      - name: Black format check
+        run: |
+          source venv/bin/activate
+          black --check --diff backend/ agent/
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 3 — TYPECHECK: mypy (strict) + pyre2
+  # ═══════════════════════════════════════════════════════════════════════════
+  typecheck:
+    name: "🔬 Type Check"
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Restore pip cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            venv/
+          key: pip-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+
+      - name: Install tools
+        run: |
+          python -m venv venv 2>/dev/null || true
+          source venv/bin/activate
+          pip install -r requirements.txt mypy pyre-check 2>/dev/null || true
+
+      - name: mypy strict check
+        run: |
+          source venv/bin/activate
+          mypy backend/ agent/ \
+            --strict \
+            --show-error-codes \
+            --pretty \
+            --ignore-missing-imports
+
+      - name: Pyre2 check
+        run: |
+          source venv/bin/activate
+          pyre --noninteractive check || echo "::warning::Pyre2 found issues (non-blocking for now)"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 4 — SECURITY SCAN: bandit + pip-audit + trivy
+  # ═══════════════════════════════════════════════════════════════════════════
+  security-scan:
+    name: "🛡️ Security Scan"
+    runs-on: ubuntu-latest
+    needs: setup
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Restore pip cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            venv/
+          key: pip-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+
+      - name: Install security tools
+        run: |
+          python -m venv venv 2>/dev/null || true
+          source venv/bin/activate
+          pip install bandit pip-audit 2>/dev/null || true
+
+      - name: Bandit SAST scan (SARIF)
+        run: |
+          source venv/bin/activate
+          bandit -r backend/ agent/ -ll -x tests/ -f sarif -o bandit-results.sarif || true
+
+      - name: Upload Bandit SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: bandit-results.sarif
+          category: bandit
+
+      - name: pip-audit dependency check
+        run: |
+          source venv/bin/activate
+          pip-audit -r requirements.txt --format=json || true
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: 0
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 5 — UNIT TESTS
+  # ═══════════════════════════════════════════════════════════════════════════
+  unit:
+    name: "🧪 Unit Tests"
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, security-scan]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Restore pip cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            venv/
+          key: pip-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+
+      - name: Install deps
+        run: |
+          python -m venv venv 2>/dev/null || true
+          source venv/bin/activate
+          pip install -r requirements.txt 2>/dev/null || true
+
+      - name: Run unit tests
+        run: |
+          source venv/bin/activate
+          pytest tests/unit/ \
+            -v --tb=short \
+            -m "not benchmark" \
+            --cov=backend --cov=agent \
+            --cov-report=xml:reports/coverage-unit.xml \
+            --cov-report=term-missing \
+            --junitxml=reports/unit-results.xml
+        env:
+          DATABASE_URL: "sqlite://"
+          REDIS_URL: "redis://localhost:6379/0"
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-unit
+          path: reports/coverage-unit.xml
+          retention-days: 14
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-results
+          path: reports/unit-results.xml
+          retention-days: 14
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 6 — INTEGRATION TESTS
+  # ═══════════════════════════════════════════════════════════════════════════
+  integration:
+    name: "🔗 Integration Tests"
+    runs-on: ubuntu-latest
+    needs: [unit]
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Restore pip cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            venv/
+          key: pip-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+
+      - name: Install deps
+        run: |
+          python -m venv venv 2>/dev/null || true
+          source venv/bin/activate
+          pip install -r requirements.txt 2>/dev/null || true
+
+      - name: Run integration tests
+        run: |
+          source venv/bin/activate
+          pytest tests/integration/ \
+            -v --tb=short \
+            -m "not benchmark" \
+            --cov=backend --cov=agent \
+            --cov-report=xml:reports/coverage-integration.xml \
+            --junitxml=reports/integration-results.xml
+        env:
+          DATABASE_URL: "sqlite://"
+          REDIS_URL: "redis://localhost:6379/0"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-results
+          path: reports/
+          retention-days: 14
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 7 — CONTRACT TESTS
+  # ═══════════════════════════════════════════════════════════════════════════
+  contract:
+    name: "📜 Contract Tests"
+    runs-on: ubuntu-latest
+    needs: [unit]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Restore pip cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            venv/
+          key: pip-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+
+      - name: Install deps
+        run: |
+          python -m venv venv 2>/dev/null || true
+          source venv/bin/activate
+          pip install -r requirements.txt 2>/dev/null || true
+
+      - name: Run contract tests
+        run: |
+          source venv/bin/activate
+          pytest tests/contract/ \
+            -v --tb=short \
+            -m "not benchmark" \
+            --junitxml=reports/contract-results.xml
+        env:
+          DATABASE_URL: "sqlite://"
+          REDIS_URL: "redis://localhost:6379/0"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 8 — REGRESSION TESTS (zero tolerance)
+  # ═══════════════════════════════════════════════════════════════════════════
+  regression:
+    name: "🔒 Regression Tests"
+    runs-on: ubuntu-latest
+    needs: [unit]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Restore pip cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            venv/
+          key: pip-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+
+      - name: Install deps
+        run: |
+          python -m venv venv 2>/dev/null || true
+          source venv/bin/activate
+          pip install -r requirements.txt 2>/dev/null || true
+
+      - name: Run regression tests (zero tolerance)
+        run: |
+          source venv/bin/activate
+          pytest tests/regression/ \
+            -v --tb=long \
+            -m "not benchmark" \
+            --junitxml=reports/regression-results.xml
+        env:
+          DATABASE_URL: "sqlite://"
+          REDIS_URL: "redis://localhost:6379/0"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 9 — PERFORMANCE BENCHMARKS (non-blocking)
+  # ═══════════════════════════════════════════════════════════════════════════
+  performance:
+    name: "⚡ Performance"
+    runs-on: ubuntu-latest
+    needs: [integration]
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Restore pip cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            venv/
+          key: pip-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+
+      - name: Install deps
+        run: |
+          python -m venv venv 2>/dev/null || true
+          source venv/bin/activate
+          pip install -r requirements.txt pytest-benchmark 2>/dev/null || true
+
+      - name: Run benchmarks
+        run: |
+          source venv/bin/activate
+          pytest tests/perf/ \
+            --benchmark-only \
+            --benchmark-json=reports/benchmark.json \
+            -v || true
+        env:
+          DATABASE_URL: "sqlite://"
+          REDIS_URL: "redis://localhost:6379/0"
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results
+          path: reports/benchmark.json
+          retention-days: 30
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 10 — COVERAGE GATE (90% minimum)
+  # ═══════════════════════════════════════════════════════════════════════════
+  coverage-gate:
+    name: "📊 Coverage Gate (≥90%)"
+    runs-on: ubuntu-latest
+    needs: [unit, integration, contract, regression]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Restore pip cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            venv/
+          key: pip-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+
+      - name: Install deps
+        run: |
+          python -m venv venv 2>/dev/null || true
+          source venv/bin/activate
+          pip install -r requirements.txt 2>/dev/null || true
+
+      - name: Run combined coverage check
+        run: |
+          source venv/bin/activate
+          pytest tests/unit/ tests/integration/ tests/contract/ tests/regression/ \
+            --cov=backend --cov=agent \
+            --cov-report=xml:reports/coverage-combined.xml \
+            --cov-report=term \
+            --cov-fail-under=90 \
+            -m "not benchmark" \
+            -q
+        env:
+          DATABASE_URL: "sqlite://"
+          REDIS_URL: "redis://localhost:6379/0"
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: reports/coverage-combined.xml
+          flags: combined
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 11 — DOCKER BUILD + SCAN
+  # ═══════════════════════════════════════════════════════════════════════════
+  docker-build:
+    name: "🐳 Docker Build & Scan"
+    runs-on: ubuntu-latest
+    needs: [coverage-gate]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write   # for cosign keyless signing
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: buildx-${{ runner.os }}-${{ hashFiles('Dockerfile', 'requirements.txt') }}
+          restore-keys: |
+            buildx-${{ runner.os }}-
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            type=semver,pattern=v{{version}}
+            type=semver,pattern=v{{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      - name: Move cache (prevent unbounded growth)
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@0.28.0
+        if: github.event_name != 'pull_request'
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          severity: HIGH,CRITICAL
+          exit-code: 0
+          format: sarif
+          output: trivy-image.sarif
+
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && github.event_name != 'pull_request'
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 12a — DEPLOY STAGING (main branch only)
+  # ═══════════════════════════════════════════════════════════════════════════
+  deploy-staging:
+    name: "🚀 Deploy Staging"
+    runs-on: ubuntu-latest
+    needs: [docker-build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: staging
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to staging
+        run: |
+          echo "═══════════════════════════════════════════════════════════"
+          echo "TODO: Replace with actual deployment command, e.g.:"
+          echo "  kubectl set image deployment/agentos-api api=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}"
+          echo "  OR: ssh staging 'docker compose pull && docker compose up -d'"
+          echo "  OR: fly deploy --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}"
+          echo "═══════════════════════════════════════════════════════════"
+
+      - name: Smoke test staging
+        run: |
+          echo "TODO: Replace STAGING_URL with actual staging domain"
+          # curl -sf https://$STAGING_URL/health || exit 1
+          # curl -sf https://$STAGING_URL/ready  || exit 1
+          echo "Smoke tests passed (placeholder)"
+
+      - name: Notify Slack
+        if: always()
+        run: |
+          echo "TODO: Post to Slack via SLACK_WEBHOOK_URL secret"
+          # curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+          #   -H 'Content-type: application/json' \
+          #   -d '{"text":"🚀 AgentOS deployed to staging: sha-${{ github.sha }}"}'
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 12b — DEPLOY PRODUCTION (tags only, manual approval)
+  # ═══════════════════════════════════════════════════════════════════════════
+  deploy-production:
+    name: "🏁 Deploy Production"
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: production
+      # Requires manual approval via GitHub Environment protection rules
+    permissions:
+      contents: write
+      packages: write
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Deploy to production
+        run: |
+          echo "═══════════════════════════════════════════════════════════"
+          echo "TODO: Replace with actual production deployment command"
+          echo "  Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}"
+          echo "═══════════════════════════════════════════════════════════"
+
+      - name: Smoke test production
+        run: |
+          echo "TODO: Replace PRODUCTION_URL with actual production domain"
+          # curl -sf https://$PRODUCTION_URL/health || exit 1
+          echo "Smoke tests passed (placeholder)"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+
+      - name: Notify Slack
+        if: always()
+        run: |
+          echo "TODO: Post to Slack via SLACK_WEBHOOK_URL secret"

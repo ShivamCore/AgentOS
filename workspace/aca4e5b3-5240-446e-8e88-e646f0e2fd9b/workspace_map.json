@@ -1,0 +1,12 @@
+{
+  "files": {
+    "add.py": {
+      "type": "file",
+      "functions": [],
+      "classes": [],
+      "imports": []
+    }
+  },
+  "dependencies": [],
+  "architecture": "Not analyzed yet"
+}

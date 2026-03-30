@@ -1,0 +1,26 @@
+{
+  "include": [
+    "backend/**/*.py",
+    "agent/**/*.py",
+    "main.py"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",
+    "**/workspace/**"
+  ],
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none",
+  "reportUnusedImport": "warning",
+  "reportReturnType": "error",
+  "reportArgumentType": "error",
+  "reportIndexIssue": "error",
+  "reportAttributeAccessIssue": "error",
+  "reportCallIssue": "error",
+  "useLibraryCodeForTypes": true,
+  "venvPath": ".",
+  "venv": ".venv"
+}

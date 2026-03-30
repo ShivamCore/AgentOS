@@ -1,0 +1,299 @@
+name: Weekly Security Scan
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+    inputs:
+      notify_slack:
+        description: "Send Slack notification"
+        required: false
+        default: "true"
+        type: boolean
+
+permissions:
+  contents: read
+  issues: write
+  security-events: write
+
+jobs:
+
+  full-dependency-audit:
+    name: Full dependency audit
+    runs-on: ubuntu-24.04
+    outputs:
+      vuln_count: ${{ steps.audit.outputs.vuln_count }}
+      critical_count: ${{ steps.audit.outputs.critical_count }}
+      report_url: ${{ steps.issue.outputs.url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install audit tools
+        run: |
+          pip install \
+            pip-audit==2.7.3 \
+            safety==3.2.4 \
+            --no-cache-dir
+
+      - name: Install project dependencies
+        run: pip install -r requirements.txt --no-cache-dir
+
+      - name: Run pip-audit (full install)
+        run: |
+          pip-audit \
+            --format json \
+            --output pip-audit-full.json \
+            --progress-spinner off || true
+
+      - name: Run safety check
+        run: |
+          safety check \
+            --json \
+            --output safety-report.json || true
+        continue-on-error: true
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          format: json
+          output: trivy-fs.json
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
+      - name: Run Trivy SARIF upload
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          format: sarif
+          output: trivy-fs.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
+      - name: Upload SARIF to Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-weekly-fs
+
+      - name: Parse and summarize all results
+        id: audit
+        run: |
+          python3 << 'EOF'
+          import json, os, datetime
+
+          def load(path):
+              try:
+                  with open(path) as f:
+                      return json.load(f)
+              except (FileNotFoundError, json.JSONDecodeError):
+                  return {}
+
+          pip_data   = load("pip-audit-full.json")
+          safety_data = load("safety-report.json")
+          trivy_data  = load("trivy-fs.json")
+
+          pip_vulns = [
+              dep for dep in pip_data.get("dependencies", [])
+              if dep.get("vulns")
+          ]
+
+          trivy_vulns = [
+              v for result in trivy_data.get("Results", [])
+              for v in result.get("Vulnerabilities", [])
+              if v.get("Severity") in ("HIGH", "CRITICAL")
+          ]
+
+          total   = len(pip_vulns) + len(trivy_vulns)
+          critical = sum(
+              1 for v in trivy_vulns
+              if v.get("Severity") == "CRITICAL"
+          )
+
+          lines = [
+              f"# 🔐 Weekly Security Scan — {datetime.date.today()}",
+              "",
+              f"| Tool | Findings |",
+              f"|------|----------|",
+              f"| pip-audit | {len(pip_vulns)} vulnerable packages |",
+              f"| trivy (fs) | {len(trivy_vulns)} HIGH/CRITICAL findings |",
+              "",
+          ]
+
+          if pip_vulns:
+              lines.append("## pip-audit findings\n")
+              for dep in pip_vulns:
+                  for v in dep["vulns"]:
+                      fix = ", ".join(v.get("fix_versions", ["no fix"]))
+                      lines.append(
+                          f"- **{dep['name']}** {dep['version']} "
+                          f"— `{v['id']}` — fix: `{fix}`"
+                      )
+              lines.append("")
+
+          if trivy_vulns:
+              lines.append("## Trivy filesystem findings\n")
+              for v in trivy_vulns[:20]:
+                  lines.append(
+                      f"- **{v.get('PkgName','?')}** {v.get('InstalledVersion','?')} "
+                      f"— `{v.get('VulnerabilityID','?')}` "
+                      f"[{v.get('Severity','?')}] "
+                      f"— fix: `{v.get('FixedVersion','no fix')}`"
+                  )
+              if len(trivy_vulns) > 20:
+                  lines.append(f"\n_...and {len(trivy_vulns)-20} more. See artifacts._")
+              lines.append("")
+
+          if total == 0:
+              lines.append("✅ **No vulnerabilities found. Codebase is clean.**")
+
+          lines += [
+              "",
+              "---",
+              "_Automated by weekly security scan workflow. "
+              "See `.github/workflows/pip-audit-scheduled.yml`._"
+          ]
+
+          report = "\n".join(lines)
+
+          with open("security-report.md", "w") as f:
+              f.write(report)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"vuln_count={total}\n")
+              f.write(f"critical_count={critical}\n")
+          EOF
+
+      - name: Upload all reports as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-security-reports-${{ github.run_id }}
+          path: |
+            pip-audit-full.json
+            safety-report.json
+            trivy-fs.json
+            trivy-fs.sarif
+            security-report.md
+          retention-days: 90
+
+      - name: Open or update GitHub Issue with findings
+        id: issue
+        uses: peter-evans/create-or-update-comment@v4
+        if: steps.audit.outputs.vuln_count != '0'
+        with:
+          issue-number: ${{ vars.SECURITY_ISSUE_NUMBER }}
+          body-path: security-report.md
+
+      - name: Create new issue if none tracked
+        if: |
+          steps.audit.outputs.vuln_count != '0' &&
+          vars.SECURITY_ISSUE_NUMBER == ''
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "🔐 Weekly Security Scan — vulnerabilities found"
+          content-filepath: security-report.md
+          labels: |
+            security
+            automated
+            high-priority
+
+      - name: Notify Slack on critical findings
+        if: |
+          steps.audit.outputs.critical_count != '0' &&
+          github.event.inputs.notify_slack != 'false'
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "🚨 *AgentOS Critical Security Alert*",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "🚨 *Weekly security scan found ${{ steps.audit.outputs.critical_count }} CRITICAL vulnerabilities*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View full report>"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_SECURITY_WEBHOOK }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+  license-compliance:
+    name: License compliance check
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pip-licenses
+        run: pip install pip-licenses==4.4.0 --no-cache-dir
+
+      - name: Install project deps
+        run: pip install -r requirements.txt --no-cache-dir
+
+      - name: Check licenses
+        run: |
+          pip-licenses \
+            --format=json \
+            --output-file=licenses.json \
+            --fail-on="GPL;LGPL;AGPL;SSPL" \
+            --ignore-packages pytest hypothesis
+
+      - name: Upload license report
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report-${{ github.run_id }}
+          path: licenses.json
+          retention-days: 90
+
+  outdated-check:
+    name: Check for outdated packages
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install -r requirements.txt --no-cache-dir
+
+      - name: List outdated packages
+        run: |
+          pip list --outdated --format=json > outdated.json
+          COUNT=$(python3 -c "import json; d=json.load(open('outdated.json')); print(len(d))")
+          echo "OUTDATED_COUNT=$COUNT" >> $GITHUB_ENV
+          python3 << 'EOF'
+          import json
+          pkgs = json.load(open("outdated.json"))
+          if not pkgs:
+              print("✅ All packages up to date.")
+          else:
+              print(f"📦 {len(pkgs)} outdated packages:\n")
+              for p in pkgs:
+                  print(f"  {p['name']:30} {p['version']:15} → {p['latest_version']}")
+          EOF
+
+      - name: Upload outdated report
+        uses: actions/upload-artifact@v4
+        with:
+          name: outdated-packages-${{ github.run_id }}
+          path: outdated.json
+          retention-days: 30

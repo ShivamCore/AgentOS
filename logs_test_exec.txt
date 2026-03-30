@@ -1,0 +1,16 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.3, pytest-9.0.2, pluggy-1.6.0 -- /Users/shonty/codebase-ai/local-coder-agent/venv/bin/python3.14
+cachedir: .pytest_cache
+metadata: {'Python': '3.14.3', 'Platform': 'macOS-26.2-arm64-arm-64bit-Mach-O', 'Packages': {'pytest': '9.0.2', 'pluggy': '1.6.0'}, 'Plugins': {'anyio': '4.12.1', 'cov': '7.1.0', 'json-report': '1.5.0', 'metadata': '3.1.1', 'asyncio': '1.3.0'}}
+rootdir: /Users/shonty/codebase-ai/local-coder-agent
+configfile: pyproject.toml
+plugins: anyio-4.12.1, cov-7.1.0, json-report-1.5.0, metadata-3.1.1, asyncio-1.3.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 12 items
+
+tests/unit/test_executor.py::TestNodeCallbackSignature::test_node_callback_called_with_exactly_two_args 
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/threading.py:369: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+====================== no tests ran in 104.55s (0:01:44) =======================

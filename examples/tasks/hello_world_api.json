@@ -1,0 +1,16 @@
+{
+  "title": "Hello World API",
+  "description": "Create a minimal FastAPI application with a single GET endpoint at /hello that returns {\"hello\": \"world\"}. Include a health check endpoint at /health.",
+  "task_type": "create_api",
+  "tech_stack": ["Python", "FastAPI"],
+  "features": [
+    "GET /hello returns {\"hello\": \"world\"}",
+    "GET /health returns {\"status\": \"ok\"}"
+  ],
+  "constraints": {
+    "max_time": 120,
+    "max_steps": 3,
+    "risk_level": "safe",
+    "file_scope": ["src/"]
+  }
+}

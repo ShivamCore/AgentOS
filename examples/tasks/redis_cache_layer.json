@@ -1,0 +1,18 @@
+{
+  "title": "Redis Cache Layer",
+  "description": "Add a Redis caching decorator to an existing Python service. The decorator should cache function return values with a configurable TTL, use the function name and arguments as the cache key, and silently degrade (pass-through) if Redis is unavailable.",
+  "task_type": "refactor",
+  "tech_stack": ["Python", "Redis"],
+  "features": [
+    "Configurable TTL per decorator usage",
+    "Cache key: <module>.<function>:<sha256(args)>",
+    "Silent Redis failure degrades to pass-through (no exception raised)",
+    "Cache invalidation via cache.invalidate(fn, *args)"
+  ],
+  "constraints": {
+    "max_time": 180,
+    "max_steps": 4,
+    "risk_level": "safe",
+    "file_scope": ["src/cache/"]
+  }
+}

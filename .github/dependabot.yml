@@ -1,0 +1,117 @@
+version: 2
+
+updates:
+
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "ShivamCore"
+    assignees:
+      - "ShivamCore"
+    labels:
+      - "dependencies"
+      - "python"
+      - "automated"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
+    groups:
+      fastapi-ecosystem:
+        patterns:
+          - "fastapi"
+          - "uvicorn"
+          - "starlette"
+          - "pydantic*"
+      celery-ecosystem:
+        patterns:
+          - "celery"
+          - "redis"
+          - "flower"
+          - "kombu"
+      test-dependencies:
+        patterns:
+          - "pytest*"
+          - "httpx"
+          - "fakeredis"
+          - "factory-boy"
+          - "freezegun"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-patch"
+      lint-dependencies:
+        patterns:
+          - "ruff"
+          - "black"
+          - "mypy"
+          - "bandit"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "automated"
+    commit-message:
+      prefix: "chore(actions)"
+      include: "scope"
+    groups:
+      github-actions-all:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "javascript"
+      - "automated"
+    commit-message:
+      prefix: "chore(deps-frontend)"
+      include: "scope"
+    groups:
+      react-ecosystem:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react*"
+      build-tools:
+        patterns:
+          - "vite"
+          - "typescript"
+          - "eslint*"
+          - "@typescript-eslint*"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "automated"
+    commit-message:
+      prefix: "chore(docker)"
