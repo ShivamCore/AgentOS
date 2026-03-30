@@ -4,7 +4,7 @@
 
 ### Local-first autonomous agents that plan, execute, and learn — no cloud required.
 
-[![CI](https://github.com/youruser/agentos/actions/workflows/ci.yml/badge.svg)](https://github.com/youruser/agentos/actions)
+[![CI](https://github.com/ShivamCore/AgentOS/actions/workflows/ci.yml/badge.svg)](https://github.com/ShivamCore/AgentOS/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![Ollama](https://img.shields.io/badge/LLM-Ollama-black)](https://ollama.com)
@@ -229,7 +229,7 @@ To apply **TurboQuant** (our high-speed quantization profile) to your own prefer
 
 ```bash
 # 1. Clone
-git clone https://github.com/youruser/agentos
+git clone https://github.com/ShivamCore/AgentOS
 cd agentos/local-coder-agent
 
 # 2. Configure
