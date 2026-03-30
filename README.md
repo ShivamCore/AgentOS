@@ -174,7 +174,16 @@ _TIER_ACCURACY = ['deepseek-coder:6.7b']        # complex planning
 _TIER_BALANCED = ['qwen2.5:3b']                 # debug tasks
 ```
 
----
+### 🦙 Bring Your Own Model
+AgentOS isn't locked to our default stack. You can plug in **any** local LLM supported by Ollama. 
+
+To apply **TurboQuant** (our high-speed quantization profile) to your own preferred models:
+
+1. **Pull the optimized quantization:** Instead of pulling the massive default weights, specify the Q4 variant explicitly via Ollama:
+   ```bash
+   ollama pull llama3:8b-instruct-q4_0
+   ```
+2. **Auto-Discovery:** That's it! AgentOS will automatically detect the new local model. The internal `ModelRouter` profiles its parameter size and instantly assigns it to the optimal execution tier (Speed, Balanced, or Accuracy) on the fly without any manual registry updates.
 
 ## 🏗️ Architecture
 
