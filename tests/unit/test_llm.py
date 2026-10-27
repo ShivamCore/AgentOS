@@ -19,12 +19,18 @@ class TestWarmupModel:
         swallowed all errors including MemoryError.
         """
         import requests
+
         from agent import llm as llm_mod
 
-        with patch("agent.llm.requests.post", side_effect=requests.exceptions.ConnectionError("Refused")):
-            with patch.object(llm_mod, "_loaded_models", {}):
-                with patch("agent.llm.logger") as mock_logger:
-                    llm_mod.warmup_model("test-model")  # Must not raise
+        with (
+            patch(
+                "agent.llm.requests.post",
+                side_effect=requests.exceptions.ConnectionError("Refused"),
+            ),
+            patch.object(llm_mod, "_loaded_models", {}),
+        ):
+            with patch("agent.llm.logger") as mock_logger:
+                llm_mod.warmup_model("test-model")  # Must not raise
 
         mock_logger.warning.assert_called_once()
         call_args = mock_logger.warning.call_args
@@ -52,7 +58,9 @@ class TestWarmupModel:
         mock_resp.iter_lines = MagicMock(return_value=[])
 
         with patch("agent.llm.requests") as mock_requests:
-            mock_requests.post.return_value.__enter__ = MagicMock(return_value=mock_resp)
+            mock_requests.post.return_value.__enter__ = MagicMock(
+                return_value=mock_resp
+            )
             mock_requests.post.return_value.__exit__ = MagicMock(return_value=False)
             mock_requests.exceptions.RequestException = Exception
 
@@ -77,7 +85,7 @@ class TestImportSideEffects:
             if "agent.llm" in sys.modules:
                 del sys.modules["agent.llm"]
             try:
-                import agent.llm  # noqa: F401
+                import agent.llm
             except Exception:
                 pass  # import errors from missing deps are ok — we check HTTP only
             finally:
@@ -140,9 +148,12 @@ class TestCheckOllama:
     def test_check_ollama_returns_false_on_connection_error(self):
         """check_ollama must return False (not raise) when Ollama is unreachable."""
         import requests
+
         from agent import llm as llm_mod
 
-        with patch("agent.llm.requests.get", side_effect=requests.exceptions.ConnectionError):
+        with patch(
+            "agent.llm.requests.get", side_effect=requests.exceptions.ConnectionError
+        ):
             result = llm_mod.check_ollama()
 
         assert result is False
@@ -180,17 +191,28 @@ class TestGenerateTextFailureModes:
     def test_model_not_found_is_not_retried_or_substituted(self):
         from agent import llm
 
-        with patch("agent.llm.requests.post", return_value=_Resp(404, {"error": "model 'm' not found"})) as post, \
-             patch("agent.llm.time.sleep"):
-            with pytest.raises(llm.ModelNotFoundError, match="ollama pull deepseek-coder:6.7b"):
-                self._gen(model=llm.PROD_MODE_MODEL, retries=2)
+        with (
+            patch(
+                "agent.llm.requests.post",
+                return_value=_Resp(404, {"error": "model 'm' not found"}),
+            ) as post,
+            patch("agent.llm.time.sleep"),
+            pytest.raises(
+                llm.ModelNotFoundError, match=r"ollama pull deepseek-coder:6\.7b"
+            ),
+        ):
+            self._gen(model=llm.PROD_MODE_MODEL, retries=2)
         assert post.call_count == 1  # no retry, no silent downgrade to another model
 
     def test_server_errors_retry_with_backoff_then_raise(self):
         from agent import llm
 
-        with patch("agent.llm.requests.post", return_value=_Resp(500, {"error": "boom"})) as post, \
-             patch("agent.llm.time.sleep") as sleep:
+        with (
+            patch(
+                "agent.llm.requests.post", return_value=_Resp(500, {"error": "boom"})
+            ) as post,
+            patch("agent.llm.time.sleep") as sleep,
+        ):
             with pytest.raises(llm.LLMUnavailableError):
                 self._gen(retries=2)
         assert post.call_count == 3
@@ -198,25 +220,40 @@ class TestGenerateTextFailureModes:
 
     def test_connection_refused_raises_unavailable(self):
         import requests
+
         from agent import llm
 
-        with patch("agent.llm.requests.post", side_effect=requests.exceptions.ConnectionError("refused")), \
-             patch("agent.llm.time.sleep"):
+        with (
+            patch(
+                "agent.llm.requests.post",
+                side_effect=requests.exceptions.ConnectionError("refused"),
+            ),
+            patch("agent.llm.time.sleep"),
+        ):
             with pytest.raises(llm.LLMUnavailableError, match="refused"):
                 self._gen(retries=1)
 
     def test_timeout_then_success(self):
         import requests
 
-        ok = _Resp(200, {"response": "hello", "eval_count": 50, "eval_duration": 1_000_000_000})
-        with patch("agent.llm.requests.post", side_effect=[requests.exceptions.ReadTimeout("slow"), ok]), \
-             patch("agent.llm.time.sleep"):
+        ok = _Resp(
+            200, {"response": "hello", "eval_count": 50, "eval_duration": 1_000_000_000}
+        )
+        with (
+            patch(
+                "agent.llm.requests.post",
+                side_effect=[requests.exceptions.ReadTimeout("slow"), ok],
+            ),
+            patch("agent.llm.time.sleep"),
+        ):
             assert self._gen(retries=1) == "hello"
 
     def test_tokens_per_second_from_ollama_counters(self):
         from agent import llm
 
-        ok = _Resp(200, {"response": "hi", "eval_count": 100, "eval_duration": 2_000_000_000})
+        ok = _Resp(
+            200, {"response": "hi", "eval_count": 100, "eval_duration": 2_000_000_000}
+        )
         with patch("agent.llm.requests.post", return_value=ok):
             self._gen()
         assert llm.get_metrics_snapshot()["recent"][-1]["tokens_per_sec"] == 50.0
@@ -224,12 +261,17 @@ class TestGenerateTextFailureModes:
     def test_empty_response_is_an_error(self):
         from agent import llm
 
-        with patch("agent.llm.requests.post", return_value=_Resp(200, {"response": "  "})):
-            with pytest.raises(llm.LLMResponseError, match="empty"):
-                self._gen(retries=1)
+        with (
+            patch(
+                "agent.llm.requests.post", return_value=_Resp(200, {"response": "  "})
+            ),
+            pytest.raises(llm.LLMResponseError, match="empty"),
+        ):
+            self._gen(retries=1)
 
     def test_incomplete_stream_is_an_error(self):
         import json as _json
+
         from agent import llm
 
         lines = [_json.dumps({"response": "partial"}).encode()]  # never sends done=true
@@ -240,8 +282,13 @@ class TestGenerateTextFailureModes:
     def test_stream_collects_chunks(self):
         import json as _json
 
-        lines = [_json.dumps({"response": "a"}).encode(), b"",
-                 _json.dumps({"response": "b", "done": True, "eval_count": 2, "eval_duration": 10**9}).encode()]
+        lines = [
+            _json.dumps({"response": "a"}).encode(),
+            b"",
+            _json.dumps(
+                {"response": "b", "done": True, "eval_count": 2, "eval_duration": 10**9}
+            ).encode(),
+        ]
         got = []
         with patch("agent.llm.requests.post", return_value=_Resp(200, lines=lines)):
             assert self._gen(stream_callback=got.append) == "ab"
@@ -257,10 +304,18 @@ class TestOllamaHealth:
     def test_reports_missing_model(self):
         from agent import llm
 
-        with patch("agent.llm.requests.get", return_value=_Resp(200, {"models": [{"name": "phi3.5:latest"}]})):
+        with patch(
+            "agent.llm.requests.get",
+            return_value=_Resp(200, {"models": [{"name": "phi3.5:latest"}]}),
+        ):
             h = llm.ollama_health("deepseek-coder:1.3b")
-        assert h["reachable"] and not h["model_present"] and "ollama pull" in h["detail"]
-        with patch("agent.llm.requests.get", return_value=_Resp(200, {"models": [{"name": "phi3.5:latest"}]})):
+        assert (
+            h["reachable"] and not h["model_present"] and "ollama pull" in h["detail"]
+        )
+        with patch(
+            "agent.llm.requests.get",
+            return_value=_Resp(200, {"models": [{"name": "phi3.5:latest"}]}),
+        ):
             assert llm.ollama_health("phi3.5")["model_present"]
 
 
@@ -268,7 +323,10 @@ def test_degenerate_generation_is_response_error_not_unavailable():
     from agent import llm
 
     body = {"error": "prediction aborted, token repeat limit reached"}
-    with patch("agent.llm.requests.post", return_value=_Resp(500, body)) as post, patch("agent.llm.time.sleep"):
+    with (
+        patch("agent.llm.requests.post", return_value=_Resp(500, body)) as post,
+        patch("agent.llm.time.sleep"),
+    ):
         with pytest.raises(llm.LLMResponseError, match="aborted"):
             llm.generate_text("p", model="m", retries=2, use_cache=False)
     assert post.call_count == 1

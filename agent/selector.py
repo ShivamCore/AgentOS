@@ -13,13 +13,22 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-from collections.abc import Callable
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from agent.llm import LLMResponseError, generate_text
 from agent.loader import AgentLoader, AgentManifest
-from agent.planner.graph import PlanPolicy, PlanValidationError, TaskGraph, parse_planner_dag
+from agent.planner.graph import (
+    PlanPolicy,
+    PlanValidationError,
+    TaskGraph,
+    parse_planner_dag,
+)
 from agent.utils.model_router import select_model as _route_model
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -47,16 +56,24 @@ class AgentSelector:
         self.loader.load_all()
         name = _ROLE_TO_AGENT.get(task_type)
         if name is None:
-            raise ValueError(f"unknown agent role {task_type!r}; expected one of {sorted(_ROLE_TO_AGENT)}")
+            raise ValueError(
+                f"unknown agent role {task_type!r}; expected one of {sorted(_ROLE_TO_AGENT)}"
+            )
         manifest = self.loader.agents.get(name)
         if manifest is None:
             status = self.loader.agent_status.get(name, {})
-            raise RuntimeError(f"agent manifest '{name}.md' is missing or invalid: {status.get('error')}")
-        res = SelectionResult(name, 1.0, f"role '{task_type}' maps to agent '{name}'", manifest)
+            raise RuntimeError(
+                f"agent manifest '{name}.md' is missing or invalid: {status.get('error')}"
+            )
+        res = SelectionResult(
+            name, 1.0, f"role '{task_type}' maps to agent '{name}'", manifest
+        )
         self.log_selection(task_id, task_type, res)
         return res
 
-    def log_selection(self, task_id: str, input_hash_src: str, res: SelectionResult) -> None:
+    def log_selection(
+        self, task_id: str, input_hash_src: str, res: SelectionResult
+    ) -> None:
         if task_id == "system":
             return
         try:
@@ -64,13 +81,17 @@ class AgentSelector:
             from backend.models.sql_models import AgentSelectionLogRecord
 
             with SessionLocal() as db:
-                db.add(AgentSelectionLogRecord(
-                    task_id=task_id,
-                    input_hash=hashlib.sha256(input_hash_src.encode()).hexdigest()[:32],
-                    selected_agent=res.agent_name,
-                    confidence=int(res.confidence * 100),
-                    reason=res.reason,
-                ))
+                db.add(
+                    AgentSelectionLogRecord(
+                        task_id=task_id,
+                        input_hash=hashlib.sha256(input_hash_src.encode()).hexdigest()[
+                            :32
+                        ],
+                        selected_agent=res.agent_name,
+                        confidence=int(res.confidence * 100),
+                        reason=res.reason,
+                    )
+                )
                 db.commit()
         except Exception:
             logger.debug("agent selection telemetry not recorded", exc_info=True)
@@ -83,15 +104,25 @@ def get_agent(task_type: str, task_id: str = "system") -> SelectionResult:
     return _global_selector.select_agent(task_type, task_id)
 
 
-def get_selection_log(limit: int = 50) -> list[dict]:
+def get_selection_log(limit: int = 50) -> list[dict[str, Any]]:
     from backend.db.database import SessionLocal
     from backend.models.sql_models import AgentSelectionLogRecord
 
     with SessionLocal() as db:
-        logs = db.query(AgentSelectionLogRecord).order_by(AgentSelectionLogRecord.timestamp.desc()).limit(limit).all()
+        logs = (
+            db.query(AgentSelectionLogRecord)
+            .order_by(AgentSelectionLogRecord.timestamp.desc())
+            .limit(limit)
+            .all()
+        )
         return [
-            {"task_id": rec.task_id, "selected_agent": rec.selected_agent, "confidence": rec.confidence,
-             "reason": rec.reason, "timestamp": rec.timestamp.isoformat() if rec.timestamp else None}
+            {
+                "task_id": rec.task_id,
+                "selected_agent": rec.selected_agent,
+                "confidence": rec.confidence,
+                "reason": rec.reason,
+                "timestamp": rec.timestamp.isoformat() if rec.timestamp else None,
+            }
             for rec in logs
         ]
 
@@ -99,7 +130,11 @@ def get_selection_log(limit: int = 50) -> list[dict]:
 def check_token_budget(prompt: str, max_input: int) -> str:
     """Truncate a prompt to roughly ``max_input`` tokens (4 chars/token heuristic)."""
     if len(prompt) // 4 > max_input:
-        logger.warning("prompt exceeds token budget (%d > %d); truncating", len(prompt) // 4, max_input)
+        logger.warning(
+            "prompt exceeds token budget (%d > %d); truncating",
+            len(prompt) // 4,
+            max_input,
+        )
         return prompt[: max_input * 4]
     return prompt
 
@@ -167,7 +202,11 @@ def plan_markdown_task(
     )
     errors: list[str] = []
     for attempt in range(max(1, attempts)):
-        prompt = base if not errors else f"{base}\n\nYour previous plan was rejected: {errors[-1]}\nFix it."
+        prompt = (
+            base
+            if not errors
+            else f"{base}\n\nYour previous plan was rejected: {errors[-1]}\nFix it."
+        )
         try:
             text = generate_text(
                 check_token_budget(prompt, agent.max_input_tokens),
@@ -184,4 +223,6 @@ def plan_markdown_task(
         except (PlanValidationError, LLMResponseError) as exc:
             logger.warning("planner attempt %d rejected: %s", attempt + 1, exc)
             errors.append(str(exc))
-    raise PlannerError(f"planner failed to produce a valid plan after {len(errors)} attempt(s): {errors[-1]}")
+    raise PlannerError(
+        f"planner failed to produce a valid plan after {len(errors)} attempt(s): {errors[-1]}"
+    )

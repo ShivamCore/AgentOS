@@ -19,7 +19,9 @@ from agent.planner.scheduler import DAGScheduler, SchedulerConfig, StepOutcome
 def graph_of(edges: dict[str, list[str]]) -> TaskGraph:
     g = TaskGraph(task_id="t")
     for nid, deps in edges.items():
-        g.nodes[nid] = StepNode(step_id=nid, description=f"step {nid}", dependencies=deps)
+        g.nodes[nid] = StepNode(
+            step_id=nid, description=f"step {nid}", dependencies=deps
+        )
     return g
 
 
@@ -45,7 +47,9 @@ class Recorder:
 
 def run(g, runner, **cfg) -> tuple:
     states: list[tuple[str, str]] = []
-    sched = DAGScheduler(runner, SchedulerConfig(**cfg), on_state=lambda n, s: states.append((n, s)))
+    sched = DAGScheduler(
+        runner, SchedulerConfig(**cfg), on_state=lambda n, s: states.append((n, s))
+    )
     report = sched.run(g)
     return report, states
 
@@ -63,7 +67,7 @@ class TestOrdering:
 
     def test_long_chain_runs_strictly_in_order(self):
         n = 40
-        edges = {f"n{i}": ([f"n{i-1}"] if i else []) for i in range(n)}
+        edges = {f"n{i}": ([f"n{i - 1}"] if i else []) for i in range(n)}
         rec = Recorder()
         report, _ = run(graph_of(edges), rec.runner(), max_workers=8)
         assert report.state is RunState.COMPLETED
@@ -74,7 +78,11 @@ class TestOrdering:
         g = graph_of({"a": [], "b": ["a"]})
         _, states = run(g, Recorder().runner(), max_workers=2)
         for nid in "ab":
-            assert [s for n, s in states if n == nid] == ["READY", "RUNNING", "COMPLETED"]
+            assert [s for n, s in states if n == nid] == [
+                "READY",
+                "RUNNING",
+                "COMPLETED",
+            ]
 
 
 class TestConcurrency:
@@ -116,17 +124,29 @@ class TestFailurePropagation:
         g = graph_of({"a": [], "b": ["a"], "c": ["b"], "x": [], "y": ["x"]})
 
         def fn(node, ctx):
-            return StepOutcome(node.step_id != "a", error="a broke" if node.step_id == "a" else None)
+            return StepOutcome(
+                node.step_id != "a", error="a broke" if node.step_id == "a" else None
+            )
 
         rec = Recorder()
         report, _ = run(g, rec.runner(fn), max_workers=2, max_retries=0)
-        assert report.node_states == {"a": "FAILED", "b": "BLOCKED", "c": "BLOCKED", "x": "COMPLETED", "y": "COMPLETED"}
+        assert report.node_states == {
+            "a": "FAILED",
+            "b": "BLOCKED",
+            "c": "BLOCKED",
+            "x": "COMPLETED",
+            "y": "COMPLETED",
+        }
         assert "b" not in rec.started and "c" not in rec.started
         assert report.state is RunState.PARTIAL_SUCCESS
         assert "dependency 'a'" in report.errors["b"]
 
     def test_all_failed_is_failed(self):
-        report, _ = run(graph_of({"a": []}), lambda n, c: StepOutcome(False, error="x"), max_retries=0)
+        report, _ = run(
+            graph_of({"a": []}),
+            lambda n, c: StepOutcome(False, error="x"),
+            max_retries=0,
+        )
         assert report.state is RunState.FAILED
 
     def test_exception_in_runner_is_a_failed_node_not_a_crash(self):
@@ -138,7 +158,9 @@ class TestFailurePropagation:
         assert "ValueError: bad" in report.errors["a"]
 
     def test_malformed_outcome_is_rejected(self):
-        report, _ = run(graph_of({"a": []}), lambda n, c: {"success": True}, max_retries=0)
+        report, _ = run(
+            graph_of({"a": []}), lambda n, c: {"success": True}, max_retries=0
+        )
         assert report.node_states["a"] == "FAILED"
         assert "malformed" in report.errors["a"]
 
@@ -155,7 +177,13 @@ class TestRetries:
         report, states = run(g, flaky, max_retries=2)
         assert report.state is RunState.COMPLETED
         assert seen == [(1, None), (2, "first try fails")]
-        assert [s for _, s in states] == ["READY", "RUNNING", "READY", "RUNNING", "COMPLETED"]
+        assert [s for _, s in states] == [
+            "READY",
+            "RUNNING",
+            "READY",
+            "RUNNING",
+            "COMPLETED",
+        ]
 
     def test_non_retryable_failure_is_not_retried(self):
         calls = []
@@ -175,7 +203,12 @@ class TestTimeoutsAndCancellation:
             return StepOutcome(True)
 
         t0 = time.monotonic()
-        report, _ = run(graph_of({"a": [], "b": ["a"]}), hang, node_timeout_sec=0.3, run_timeout_sec=30)
+        report, _ = run(
+            graph_of({"a": [], "b": ["a"]}),
+            hang,
+            node_timeout_sec=0.3,
+            run_timeout_sec=30,
+        )
         assert time.monotonic() - t0 < 5
         assert report.node_states == {"a": "TIMED_OUT", "b": "BLOCKED"}
 
@@ -190,7 +223,9 @@ class TestTimeoutsAndCancellation:
 
         g = graph_of({"a": [], "b": ["a"]})
         sched = DAGScheduler(fn, SchedulerConfig(max_workers=1))
-        threading.Thread(target=lambda: (started.wait(5), cancel.set()), daemon=True).start()
+        threading.Thread(
+            target=lambda: (started.wait(5), cancel.set()), daemon=True
+        ).start()
         report = sched.run(g, cancel_event=cancel)
         assert report.state is RunState.CANCELLED
         assert report.node_states["b"] == "CANCELLED"
@@ -201,7 +236,9 @@ class TestTimeoutsAndCancellation:
             time.sleep(0.5)  # ignores the cancel event on purpose
             return StepOutcome(True)
 
-        report, states = run(graph_of({"a": []}), slow, node_timeout_sec=0.1, run_timeout_sec=30)
+        report, states = run(
+            graph_of({"a": []}), slow, node_timeout_sec=0.1, run_timeout_sec=30
+        )
         assert report.node_states["a"] == "TIMED_OUT"
         time.sleep(0.6)
         assert [s for _, s in states].count("COMPLETED") == 0
@@ -209,21 +246,29 @@ class TestTimeoutsAndCancellation:
     def test_terminal_states_never_change(self):
         g = graph_of({"a": []})
         run(g, lambda n, c: StepOutcome(True))
-        from agent.lifecycle import InvalidTransition
+        from agent.lifecycle import InvalidTransitionError
 
-        with pytest.raises(InvalidTransition):
+        with pytest.raises(InvalidTransitionError):
             g.nodes["a"].transition(NodeState.RUNNING)
 
 
 class TestBudgets:
     def test_step_budget_cancels_unstarted_nodes(self):
-        report, _ = run(graph_of({f"n{i}": [] for i in range(5)}), lambda n, c: StepOutcome(True),
-                        max_workers=1, max_steps=3)
+        report, _ = run(
+            graph_of({f"n{i}": [] for i in range(5)}),
+            lambda n, c: StepOutcome(True),
+            max_workers=1,
+            max_steps=3,
+        )
         assert report.nodes_started == 3
         assert sorted(report.node_states.values()).count("CANCELLED") == 2
 
     def test_retries_do_not_consume_step_budget(self):
-        report, _ = run(graph_of({"a": [], "b": []}),
-                        lambda n, c: StepOutcome(c.attempt == 2, error="retry me"),
-                        max_workers=1, max_steps=2, max_retries=1)
+        report, _ = run(
+            graph_of({"a": [], "b": []}),
+            lambda n, c: StepOutcome(c.attempt == 2, error="retry me"),
+            max_workers=1,
+            max_steps=2,
+            max_retries=1,
+        )
         assert report.state is RunState.COMPLETED

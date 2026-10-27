@@ -25,17 +25,35 @@ def _ready() -> bool:
     return ollama_health(MODEL)["model_present"]
 
 
-pytestmark = [pytest.mark.ollama, pytest.mark.skipif(not _ready(), reason="set AGENTOS_TEST_OLLAMA_MODEL to an installed Ollama model")]
+pytestmark = [
+    pytest.mark.ollama,
+    pytest.mark.skipif(
+        not _ready(),
+        reason="set AGENTOS_TEST_OLLAMA_MODEL to an installed Ollama model",
+    ),
+]
 
 
 def test_generate_and_stream():
     from agent.llm import generate_text, get_metrics_snapshot
 
-    text = generate_text("Reply with the single word: pong", model=MODEL, temperature=0, max_tokens=8, use_cache=False)
+    text = generate_text(
+        "Reply with the single word: pong",
+        model=MODEL,
+        temperature=0,
+        max_tokens=8,
+        use_cache=False,
+    )
     assert text.strip()
     chunks: list[str] = []
-    streamed = generate_text("Count: 1 2 3", model=MODEL, temperature=0, max_tokens=8,
-                             stream_callback=chunks.append, use_cache=False)
+    streamed = generate_text(
+        "Count: 1 2 3",
+        model=MODEL,
+        temperature=0,
+        max_tokens=8,
+        stream_callback=chunks.append,
+        use_cache=False,
+    )
     assert "".join(chunks) == streamed
     assert get_metrics_snapshot()["recent"][-1]["tokens_per_sec"] > 0
 
@@ -44,7 +62,12 @@ def test_missing_model_is_reported():
     from agent.llm import ModelNotFoundError, generate_text
 
     with pytest.raises(ModelNotFoundError):
-        generate_text("hi", model="agentos-definitely-not-installed:0b", retries=0, use_cache=False)
+        generate_text(
+            "hi",
+            model="agentos-definitely-not-installed:0b",
+            retries=0,
+            use_cache=False,
+        )
 
 
 def test_real_planner_output_is_validated(monkeypatch):

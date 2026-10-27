@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-
 from tests.conftest import seed_task
 
 
@@ -18,11 +17,14 @@ class TestTaskCreationAndRetrieval:
         """POST /tasks/create must persist a TaskRecord to the DB."""
         from backend.models.sql_models import TaskRecord
 
-        response = test_client.post("/tasks/create", json={
-            "title": "Integration task",
-            "description": "Full integration test",
-            "task_type": "build_app",
-        })
+        response = test_client.post(
+            "/tasks/create",
+            json={
+                "title": "Integration task",
+                "description": "Full integration test",
+                "task_type": "build_app",
+            },
+        )
         assert response.status_code in (200, 201, 202)
         task_id = response.json()["task_id"]
 
@@ -62,8 +64,9 @@ class TestTaskStateTransitions:
         response = test_client.get(f"/tasks/{task.id}")
 
         data = response.json()
-        assert data["status"] == data["status"].upper(), \
+        assert data["status"] == data["status"].upper(), (
             f"API returned lowercase status: {data['status']!r}"
+        )
 
     def test_task_never_enters_invalid_transition(self, db):
         """
@@ -90,8 +93,9 @@ class TestTaskStateTransitions:
 
         db.expire(task)
         task = db.query(TaskRecord).filter(TaskRecord.id == task.id).first()
-        assert task.status == "CREATED", \
+        assert task.status == "CREATED", (
             f"After retry, status must be CREATED, got {task.status!r}"
+        )
 
 
 class TestConcurrentTaskSubmission:
@@ -103,26 +107,31 @@ class TestConcurrentTaskSubmission:
 
         task_ids = set()
         for i in range(10):
-            r = test_client.post("/tasks/create", json={
-                "title": f"Concurrent task {i}",
-                "description": f"Task number {i} in sequence",
-                "task_type": "fix_bug",
-            })
+            r = test_client.post(
+                "/tasks/create",
+                json={
+                    "title": f"Concurrent task {i}",
+                    "description": f"Task number {i} in sequence",
+                    "task_type": "fix_bug",
+                },
+            )
             assert r.status_code in (200, 201, 202)
             task_ids.add(r.json()["task_id"])
 
-        assert len(task_ids) == 10, \
-            f"Expected 10 unique task IDs, got {len(task_ids)}"
+        assert len(task_ids) == 10, f"Expected 10 unique task IDs, got {len(task_ids)}"
 
     def test_tasks_have_unique_ids(self, test_client, db):
         """Each task must receive a unique UUID — never a collision."""
         ids = []
         for _ in range(5):
-            r = test_client.post("/tasks/create", json={
-                "title": "Unique ID test",
-                "description": "Each must get a unique identifier",
-                "task_type": "create_api",
-            })
+            r = test_client.post(
+                "/tasks/create",
+                json={
+                    "title": "Unique ID test",
+                    "description": "Each must get a unique identifier",
+                    "task_type": "create_api",
+                },
+            )
             if r.status_code in (200, 201, 202):
                 ids.append(r.json()["task_id"])
 
@@ -143,11 +152,14 @@ class TestBackpressureIntegration:
             seed_task(db, status="CREATED")
             seed_task(db, status="RUNNING")
 
-            response = test_client.post("/tasks/create", json={
-                "title": "Overflow task",
-                "description": "This must be rejected",
-                "task_type": "build_app",
-            })
+            response = test_client.post(
+                "/tasks/create",
+                json={
+                    "title": "Overflow task",
+                    "description": "This must be rejected",
+                    "task_type": "build_app",
+                },
+            )
 
         assert response.status_code == 429
         assert "Queue saturated" in response.json().get("detail", "")
@@ -164,9 +176,11 @@ class TestBackpressureIntegration:
         seed_task(db, status="PLANNED")
 
         # Simulate the exact query from _check_backpressure
-        count = db.query(TaskRecord).filter(
-            TaskRecord.status.in_(["CREATED", "PLANNED", "RUNNING"])
-        ).count()
+        count = (
+            db.query(TaskRecord)
+            .filter(TaskRecord.status.in_(["CREATED", "PLANNED", "RUNNING"]))
+            .count()
+        )
 
         assert count == 3, (
             f"Backpressure query found {count} tasks, expected 3. "

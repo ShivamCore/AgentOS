@@ -13,4 +13,7 @@ from backend.db.migrations import ensure_schema
 
 if __name__ == "__main__":
     added = ensure_schema(engine)
-    print("[migrate] added: " + (", ".join(added) if added else "nothing (schema up to date)"))
+    print(
+        "[migrate] added: "
+        + (", ".join(added) if added else "nothing (schema up to date)")
+    )

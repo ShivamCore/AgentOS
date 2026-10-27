@@ -17,16 +17,20 @@ Ollama client.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
 import re
 import threading
 import time
-from collections.abc import Callable
-from typing import Any
+
+from typing import TYPE_CHECKING, Any
 
 import requests
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -70,18 +74,30 @@ _model_lock = threading.Lock()
 _generate_slots = threading.BoundedSemaphore(MAX_CONCURRENT)
 
 _metrics_lock = threading.Lock()
-_metrics: list[dict] = []
+_metrics: list[dict[str, Any]] = []
 _METRICS_MAX = 500
 
 
-def _track_latency_and_tokens(model: str, task_type: str, prompt_chars: int, response_chars: int,
-                              latency_ms: int, tokens_per_sec: float, cache_hit: bool,
-                              error: str | None) -> None:
+def _track_latency_and_tokens(
+    model: str,
+    task_type: str,
+    prompt_chars: int,
+    response_chars: int,
+    latency_ms: int,
+    tokens_per_sec: float,
+    cache_hit: bool,
+    error: str | None,
+) -> None:
     entry = {
-        "ts": time.time(), "model": model, "task_type": task_type,
-        "prompt_chars": prompt_chars, "response_chars": response_chars,
-        "latency_ms": latency_ms, "tokens_per_sec": round(tokens_per_sec, 1),
-        "cache_hit": cache_hit, "error": error,
+        "ts": time.time(),
+        "model": model,
+        "task_type": task_type,
+        "prompt_chars": prompt_chars,
+        "response_chars": response_chars,
+        "latency_ms": latency_ms,
+        "tokens_per_sec": round(tokens_per_sec, 1),
+        "cache_hit": cache_hit,
+        "error": error,
     }
     with _metrics_lock:
         _metrics.append(entry)
@@ -89,17 +105,29 @@ def _track_latency_and_tokens(model: str, task_type: str, prompt_chars: int, res
             _metrics.pop(0)
 
 
-def get_metrics_snapshot() -> dict:
+def get_metrics_snapshot() -> dict[str, Any]:
     with _metrics_lock:
         snapshot = list(_metrics)
     if not snapshot:
-        return {"total_calls": 0, "cache_hits": 0, "cache_hit_rate": 0.0, "avg_latency_ms": 0,
-                "avg_tokens_per_sec": 0.0, "errors": 0, "by_model": {}, "recent": []}
+        return {
+            "total_calls": 0,
+            "cache_hits": 0,
+            "cache_hit_rate": 0.0,
+            "avg_latency_ms": 0,
+            "avg_tokens_per_sec": 0.0,
+            "errors": 0,
+            "by_model": {},
+            "recent": [],
+        }
     total = len(snapshot)
     hits = sum(1 for m in snapshot if m["cache_hit"])
     errors = sum(1 for m in snapshot if m["error"])
-    live = [m for m in snapshot if not m["cache_hit"] and not m["error"] and m["tokens_per_sec"] > 0]
-    by_model: dict[str, dict] = {}
+    live = [
+        m
+        for m in snapshot
+        if not m["cache_hit"] and not m["error"] and m["tokens_per_sec"] > 0
+    ]
+    by_model: dict[str, dict[str, Any]] = {}
     for m in snapshot:
         s = by_model.setdefault(m["model"], {"calls": 0, "total_ms": 0, "errors": 0})
         s["calls"] += 1
@@ -108,10 +136,18 @@ def get_metrics_snapshot() -> dict:
     for s in by_model.values():
         s["avg_latency_ms"] = int(s.pop("total_ms") / s["calls"])
     return {
-        "total_calls": total, "cache_hits": hits, "cache_hit_rate": round(hits / total, 3),
+        "total_calls": total,
+        "cache_hits": hits,
+        "cache_hit_rate": round(hits / total, 3),
         "avg_latency_ms": int(sum(m["latency_ms"] for m in snapshot) / total),
-        "avg_tokens_per_sec": round(sum(m["tokens_per_sec"] for m in live) / len(live), 1) if live else 0.0,
-        "errors": errors, "by_model": by_model, "recent": snapshot[-10:],
+        "avg_tokens_per_sec": (
+            round(sum(m["tokens_per_sec"] for m in live) / len(live), 1)
+            if live
+            else 0.0
+        ),
+        "errors": errors,
+        "by_model": by_model,
+        "recent": snapshot[-10:],
     }
 
 
@@ -120,8 +156,17 @@ def trim_prompt(prompt: str, max_chars: int = MAX_INPUT_CHARS) -> tuple[str, boo
         return prompt, False
     head = int(max_chars * 0.60)
     tail = max_chars - head
-    trimmed = prompt[:head] + "\n\n[... context trimmed for token budget ...]\n\n" + prompt[-tail:]
-    logger.warning("[LLM] Prompt trimmed %d -> %d chars (budget %d)", len(prompt), len(trimmed), max_chars)
+    trimmed = (
+        prompt[:head]
+        + "\n\n[... context trimmed for token budget ...]\n\n"
+        + prompt[-tail:]
+    )
+    logger.warning(
+        "[LLM] Prompt trimmed %d -> %d chars (budget %d)",
+        len(prompt),
+        len(trimmed),
+        max_chars,
+    )
     return trimmed, True
 
 
@@ -136,7 +181,10 @@ def check_ollama() -> bool:
         list_models()
         return True
     except (requests.exceptions.RequestException, ValueError):
-        logger.error("[LLM] Cannot reach Ollama at %s. Is `ollama serve` running?", OLLAMA_TAGS_URL)
+        logger.error(
+            "[LLM] Cannot reach Ollama at %s. Is `ollama serve` running?",
+            OLLAMA_TAGS_URL,
+        )
         return False
 
 
@@ -146,12 +194,28 @@ def ollama_health(model: str | None = None) -> dict[str, Any]:
     try:
         models = list_models()
     except (requests.exceptions.RequestException, ValueError) as exc:
-        return {"reachable": False, "url": OLLAMA_TAGS_URL, "model": model, "model_present": False,
-                "models": [], "detail": f"cannot reach Ollama: {exc}"}
+        return {
+            "reachable": False,
+            "url": OLLAMA_TAGS_URL,
+            "model": model,
+            "model_present": False,
+            "models": [],
+            "detail": f"cannot reach Ollama: {exc}",
+        }
     present = model in models or f"{model}:latest" in models
-    detail = "ok" if present else f"model '{model}' is not installed; run `ollama pull {model}`"
-    return {"reachable": True, "url": OLLAMA_TAGS_URL, "model": model, "model_present": present,
-            "models": models, "detail": detail}
+    detail = (
+        "ok"
+        if present
+        else f"model '{model}' is not installed; run `ollama pull {model}`"
+    )
+    return {
+        "reachable": True,
+        "url": OLLAMA_TAGS_URL,
+        "model": model,
+        "model_present": present,
+        "models": models,
+        "detail": detail,
+    }
 
 
 def warmup_model(model: str = DEFAULT_MODEL) -> None:
@@ -164,8 +228,13 @@ def warmup_model(model: str = DEFAULT_MODEL) -> None:
         try:
             r = requests.post(
                 OLLAMA_URL,
-                json={"model": model, "prompt": "hi", "stream": False, "keep_alive": KEEP_ALIVE,
-                      "options": {"num_ctx": NUM_CTX, "temperature": 0, "num_predict": 1}},
+                json={
+                    "model": model,
+                    "prompt": "hi",
+                    "stream": False,
+                    "keep_alive": KEEP_ALIVE,
+                    "options": {"num_ctx": NUM_CTX, "temperature": 0, "num_predict": 1},
+                },
                 timeout=(CONNECT_TIMEOUT, LOAD_TIMEOUT),
             )
             r.raise_for_status()
@@ -183,20 +252,30 @@ def _raise_for_response(resp: requests.Response, model: str) -> None:
     except ValueError:
         body = resp.text[:300]
     if resp.status_code == 404 or "not found" in str(body).lower():
-        raise ModelNotFoundError(f"model '{model}' is not available in Ollama ({body}); run `ollama pull {model}`")
-    if resp.status_code >= 500 and any(k in str(body).lower() for k in ("prediction aborted", "repeat limit")):
+        raise ModelNotFoundError(
+            f"model '{model}' is not available in Ollama ({body}); run `ollama pull {model}`"
+        )
+    if resp.status_code >= 500 and any(
+        k in str(body).lower() for k in ("prediction aborted", "repeat limit")
+    ):
         # The server is fine; this generation degenerated. Retrying the identical request will not help.
         raise LLMResponseError(f"generation aborted by Ollama: {body}")
     if resp.status_code >= 500:
-        raise requests.exceptions.HTTPError(f"Ollama {resp.status_code}: {body}", response=resp)
+        raise requests.exceptions.HTTPError(
+            f"Ollama {resp.status_code}: {body}", response=resp
+        )
     raise LLMResponseError(f"Ollama rejected the request ({resp.status_code}): {body}")
 
 
-def _do_request(payload: dict, stream_callback: Callable[[str], None] | None) -> tuple[str, dict]:
+def _do_request(
+    payload: dict[str, Any], stream_callback: Callable[[str], None] | None
+) -> tuple[str, dict[str, Any]]:
     stream = stream_callback is not None
     with _generate_slots:
         resp = requests.post(
-            OLLAMA_URL, json=payload, stream=stream,
+            OLLAMA_URL,
+            json=payload,
+            stream=stream,
             timeout=(CONNECT_TIMEOUT, TOKEN_TIMEOUT if stream else MAX_TOTAL_TIMEOUT),
         )
         try:
@@ -205,16 +284,20 @@ def _do_request(payload: dict, stream_callback: Callable[[str], None] | None) ->
                 try:
                     data = resp.json()
                 except ValueError as exc:
-                    raise LLMResponseError(f"Ollama returned non-JSON body: {exc}") from exc
+                    raise LLMResponseError(
+                        f"Ollama returned non-JSON body: {exc}"
+                    ) from exc
                 if data.get("error"):
                     raise LLMResponseError(f"Ollama error: {data['error']}")
                 return data.get("response", ""), data
             parts: list[str] = []
-            final: dict = {}
+            final: dict[str, Any] = {}
             deadline = time.monotonic() + MAX_TOTAL_TIMEOUT
             for line in resp.iter_lines():
                 if time.monotonic() > deadline:
-                    raise requests.exceptions.Timeout(f"generation exceeded {MAX_TOTAL_TIMEOUT}s")
+                    raise requests.exceptions.Timeout(
+                        f"generation exceeded {MAX_TOTAL_TIMEOUT}s"
+                    )
                 if not line:
                     continue
                 try:
@@ -231,7 +314,9 @@ def _do_request(payload: dict, stream_callback: Callable[[str], None] | None) ->
                     final = chunk
                     break
             if not final:
-                raise LLMResponseError("stream ended before Ollama reported completion (incomplete output)")
+                raise LLMResponseError(
+                    "stream ended before Ollama reported completion (incomplete output)"
+                )
             return "".join(parts), final
         finally:
             resp.close()
@@ -260,24 +345,33 @@ def generate_text(
         raise ValueError("retries must be within [0, 5]")
 
     prompt, _ = trim_prompt(prompt)
-    should_cache = (use_cache if use_cache is not None else CACHE_ENABLED) and stream_callback is None
+    should_cache = (
+        use_cache if use_cache is not None else CACHE_ENABLED
+    ) and stream_callback is None
     if should_cache:
         from agent.utils.inference_cache import get_cached
 
         cached = get_cached(model, prompt, system_prompt, temperature)
         if cached is not None:
-            _track_latency_and_tokens(model, task_type, len(prompt), len(cached), 0, 0.0, True, None)
+            _track_latency_and_tokens(
+                model, task_type, len(prompt), len(cached), 0, 0.0, True, None
+            )
             return cached
 
     payload: dict[str, Any] = {
-        "model": model, "prompt": prompt, "system": system_prompt,
-        "stream": stream_callback is not None, "keep_alive": KEEP_ALIVE,
+        "model": model,
+        "prompt": prompt,
+        "system": system_prompt,
+        "stream": stream_callback is not None,
+        "keep_alive": KEEP_ALIVE,
         "options": {"temperature": temperature, "num_ctx": NUM_CTX},
     }
     if max_tokens > 0:
         payload["options"]["num_predict"] = max_tokens
     if json_mode:
-        payload["format"] = "json"  # Ollama constrains decoding to syntactically valid JSON
+        payload["format"] = (
+            "json"  # Ollama constrains decoding to syntactically valid JSON
+        )
 
     t0 = time.time()
     last_exc: Exception | None = None
@@ -287,10 +381,28 @@ def generate_text(
             if not text.strip():
                 raise LLMResponseError("model returned an empty response")
             elapsed = time.time() - t0
-            ev_count, ev_dur = meta.get("eval_count") or 0, meta.get("eval_duration") or 0
+            ev_count, ev_dur = (
+                meta.get("eval_count") or 0,
+                meta.get("eval_duration") or 0,
+            )
             tps = ev_count / (ev_dur / 1e9) if ev_count and ev_dur else 0.0
-            logger.info("[LLM] %s -> %d chars in %.1fs (%.1f tok/s)", model, len(text), elapsed, tps)
-            _track_latency_and_tokens(model, task_type, len(prompt), len(text), int(elapsed * 1000), tps, False, None)
+            logger.info(
+                "[LLM] %s -> %d chars in %.1fs (%.1f tok/s)",
+                model,
+                len(text),
+                elapsed,
+                tps,
+            )
+            _track_latency_and_tokens(
+                model,
+                task_type,
+                len(prompt),
+                len(text),
+                int(elapsed * 1000),
+                tps,
+                False,
+                None,
+            )
             if should_cache:
                 from agent.utils.inference_cache import set_cached
 
@@ -299,20 +411,44 @@ def generate_text(
         except (ModelNotFoundError, LLMResponseError) as exc:
             # Client-side / model problems: retrying will not help (except an empty reply, retried once).
             last_exc = exc
-            if isinstance(exc, LLMResponseError) and "empty response" in str(exc) and attempt < retries:
+            if (
+                isinstance(exc, LLMResponseError)
+                and "empty response" in str(exc)
+                and attempt < retries
+            ):
                 continue
-            _track_latency_and_tokens(model, task_type, len(prompt), 0, int((time.time() - t0) * 1000),
-                                      0.0, False, str(exc))
+            _track_latency_and_tokens(
+                model,
+                task_type,
+                len(prompt),
+                0,
+                int((time.time() - t0) * 1000),
+                0.0,
+                False,
+                str(exc),
+            )
             raise
         except requests.exceptions.RequestException as exc:
             last_exc = exc
-            logger.warning("[LLM] attempt %d/%d failed: %s", attempt + 1, retries + 1, exc)
+            logger.warning(
+                "[LLM] attempt %d/%d failed: %s", attempt + 1, retries + 1, exc
+            )
             if attempt < retries:
-                time.sleep(min(2 ** attempt, 8))
+                time.sleep(min(2**attempt, 8))
 
-    _track_latency_and_tokens(model, task_type, len(prompt), 0, int((time.time() - t0) * 1000), 0.0, False,
-                              str(last_exc))
-    raise LLMUnavailableError(f"Ollama request for model '{model}' failed after {retries + 1} attempt(s): {last_exc}")
+    _track_latency_and_tokens(
+        model,
+        task_type,
+        len(prompt),
+        0,
+        int((time.time() - t0) * 1000),
+        0.0,
+        False,
+        str(last_exc),
+    )
+    raise LLMUnavailableError(
+        f"Ollama request for model '{model}' failed after {retries + 1} attempt(s): {last_exc}"
+    )
 
 
 def _first_json_value(text: str, opener: str) -> Any:
@@ -327,21 +463,21 @@ def _first_json_value(text: str, opener: str) -> Any:
     return None
 
 
-def extract_json_safely(text: str) -> dict | list | None:
+def extract_json_safely(text: str) -> dict[str, Any] | list[Any] | None:
     """Best-effort extraction of the first JSON object (preferred) or array from model text."""
     if not text:
         return None
+    candidates: list[Any] = []
     try:
-        return json.loads(text)
+        candidates.append(json.loads(text))
     except (json.JSONDecodeError, TypeError):
-        pass
-    match = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(1).strip())
-        except json.JSONDecodeError:
-            pass
-    obj = _first_json_value(text, "{")
-    if obj is not None:
-        return obj
-    return _first_json_value(text, "[")
+        match = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
+        if match:
+            with contextlib.suppress(json.JSONDecodeError):
+                candidates.append(json.loads(match.group(1).strip()))
+        candidates.append(_first_json_value(text, "{"))
+        candidates.append(_first_json_value(text, "["))
+    for value in candidates:
+        if isinstance(value, (dict, list)):
+            return value
+    return None

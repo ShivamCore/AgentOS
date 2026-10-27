@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+
 from typing import ClassVar
 
 from pydantic import Field
@@ -42,7 +43,9 @@ class FileReadTool(Tool):
             return ToolResult(success=False, error=str(exc))
         try:
             if os.path.getsize(path) > MAX_FILE_BYTES:
-                return ToolResult(success=False, error=f"file exceeds {MAX_FILE_BYTES} bytes")
+                return ToolResult(
+                    success=False, error=f"file exceeds {MAX_FILE_BYTES} bytes"
+                )
             with open(path, encoding="utf-8") as f:
                 return ToolResult(success=True, output=f.read())
         except OSError as exc:
@@ -56,14 +59,19 @@ class FileWriteInput(ToolInput):
 
 class FileWriteTool(Tool):
     name: ClassVar[str] = "file_write"
-    description: ClassVar[str] = "Create or overwrite a UTF-8 text file inside the task workspace."
+    description: ClassVar[str] = (
+        "Create or overwrite a UTF-8 text file inside the task workspace."
+    )
     side_effects: ClassVar[str] = "writes one file under the task workspace"
     input_schema = FileWriteInput
 
     def execute(self, inputs: FileWriteInput, workspace_dir: str) -> ToolResult:  # type: ignore[override]
         size = len(inputs.content.encode("utf-8"))
         if size > MAX_FILE_BYTES:
-            return ToolResult(success=False, error=f"content is {size} bytes; limit is {MAX_FILE_BYTES}")
+            return ToolResult(
+                success=False,
+                error=f"content is {size} bytes; limit is {MAX_FILE_BYTES}",
+            )
         try:
             path = resolve_in_workspace(inputs.file_path, workspace_dir)
         except PathEscapeError as exc:
@@ -74,7 +82,10 @@ class FileWriteTool(Tool):
             with open(tmp, "w", encoding="utf-8") as f:
                 f.write(inputs.content)
             os.replace(tmp, path)
-            return ToolResult(success=True, output=f"wrote {inputs.file_path} ({size} bytes)",
-                              data={"path": inputs.file_path, "bytes": size})
+            return ToolResult(
+                success=True,
+                output=f"wrote {inputs.file_path} ({size} bytes)",
+                data={"path": inputs.file_path, "bytes": size},
+            )
         except OSError as exc:
             return ToolResult(success=False, error=f"{type(exc).__name__}: {exc}")

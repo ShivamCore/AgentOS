@@ -1,11 +1,12 @@
 from celery import Celery
+
 from backend.config import settings
 
 celery_app = Celery(
     "coder_agent_tasks",
     broker=settings.REDIS_URL,
     backend=settings.REDIS_URL,
-    include=["backend.workers.tasks"],   # ← tells workers which modules to import
+    include=["backend.workers.tasks"],  # ← tells workers which modules to import
 )
 
 celery_app.conf.update(

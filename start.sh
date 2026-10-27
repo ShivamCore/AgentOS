@@ -53,7 +53,7 @@ echo ""
 
 # ── Backend ──────────────────────────────────────────────────────────────────
 echo "🚀 Starting FastAPI backend on :8000 ..."
-uvicorn backend.api.main:app --host 0.0.0.0 --port 8000 --reload &
+uvicorn backend.api.main:app --host "${AGENTOS_HOST:-127.0.0.1}" --port 8000 --reload &
 BACKEND_PID=$!
 
 sleep 2

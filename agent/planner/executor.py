@@ -16,15 +16,28 @@ from __future__ import annotations
 
 import logging
 import os
-import threading
 import time
-from collections.abc import Callable
+
+from typing import TYPE_CHECKING
 
 from agent.executor import execute_step, extract_json_payload
-from agent.planner.graph import StepNode, TaskGraph
-from agent.planner.scheduler import DAGScheduler, RunReport, SchedulerConfig, StepContext, StepOutcome, StepRunner
+from agent.planner.scheduler import (
+    DAGScheduler,
+    RunReport,
+    SchedulerConfig,
+    StepContext,
+    StepOutcome,
+    StepRunner,
+)
 from agent.selector import execute_markdown_agent, get_agent
 from agent.tools.registry import registry
+
+if TYPE_CHECKING:
+    import threading
+
+    from collections.abc import Callable
+
+    from agent.planner.graph import StepNode, TaskGraph
 
 logger = logging.getLogger(__name__)
 
@@ -82,43 +95,67 @@ class LLMStepRunner:
         selection = get_agent(role, self.task_id)
         agent_tools = list(selection.manifest.tools) if selection.manifest else []
         allowed = self.allowed_tools(node, agent_tools)
-        self.log(node.step_id, "action",
-                 f"attempt {ctx.attempt}: agent={selection.agent_name} tools={sorted(allowed)}")
+        self.log(
+            node.step_id,
+            "action",
+            f"attempt {ctx.attempt}: agent={selection.agent_name} tools={sorted(allowed)}",
+        )
 
         context = workspace_listing(self.workspace_dir)
         if memory_enabled():
             from agent.memory.engine import get_memory_engine
 
-            mems = get_memory_engine(self.workspace_dir).search_memory(node.description, limit=3)
+            mems = get_memory_engine(self.workspace_dir).search_memory(
+                node.description, limit=3
+            )
             if mems:
-                context += "\n\nRELEVANT PAST MEMORY:\n" + "\n".join(m.document for m in mems)
+                context += "\n\nRELEVANT PAST MEMORY:\n" + "\n".join(
+                    m.document for m in mems
+                )
 
         if ctx.cancel_event.is_set():
-            return StepOutcome(False, error="cancelled before LLM call", retryable=False)
+            return StepOutcome(
+                False, error="cancelled before LLM call", retryable=False
+            )
         response = execute_markdown_agent(
             task_type=role,
             step_description=node.description,
-            error_or_context=(ctx.previous_error or "") if role == "debug" else self.user_task,
+            error_or_context=(
+                (ctx.previous_error or "") if role == "debug" else self.user_task
+            ),
             workspace_context=context,
             model=self.model,
             task_id=self.task_id,
         )
         if ctx.cancel_event.is_set():
-            return StepOutcome(False, error="cancelled after LLM call; output discarded", retryable=False)
+            return StepOutcome(
+                False,
+                error="cancelled after LLM call; output discarded",
+                retryable=False,
+            )
 
         parsed = extract_json_payload(response)
         if parsed.get("error"):
             return StepOutcome(False, error=parsed["error"])
-        result = execute_step(parsed, self.workspace_dir, allowed_tools=allowed, file_scope=self.file_scope)
+        result = execute_step(
+            parsed,
+            self.workspace_dir,
+            allowed_tools=allowed,
+            file_scope=self.file_scope,
+        )
         if not result["success"]:
             return StepOutcome(False, output=result["stdout"], error=result["stderr"])
         if memory_enabled():
             from agent.memory.engine import get_memory_engine
 
             get_memory_engine(self.workspace_dir).store_memory(
-                selection.agent_name, "task", f"TASK:\n{node.description}\n\nRESOLUTION:\n{response}"
+                selection.agent_name,
+                "task",
+                f"TASK:\n{node.description}\n\nRESOLUTION:\n{response}",
             )
-        return StepOutcome(True, output=result["stdout"], files_written=result["files_written"])
+        return StepOutcome(
+            True, output=result["stdout"], files_written=result["files_written"]
+        )
 
 
 class DAGOrchestrator:
@@ -153,8 +190,13 @@ class DAGOrchestrator:
         self.node_callback = node_callback or (lambda *_: None)
         self.file_callback = file_callback or (lambda *_: None)
         self.step_runner: StepRunner = step_runner or LLMStepRunner(
-            workspace_dir, task_id, user_task=user_task, model=model, risk_level=risk_level,
-            file_scope=self.file_scope, log_callback=self.log_callback,
+            workspace_dir,
+            task_id,
+            user_task=user_task,
+            model=model,
+            risk_level=risk_level,
+            file_scope=self.file_scope,
+            log_callback=self.log_callback,
         )
         self.start_ts: float = 0.0
         self.total_nodes_executed: int = 0
@@ -165,13 +207,19 @@ class DAGOrchestrator:
         if isinstance(outcome, StepOutcome) and outcome.success:
             for rel in outcome.files_written:
                 try:
-                    with open(os.path.join(self.workspace_dir, rel), encoding="utf-8", errors="replace") as f:
+                    with open(
+                        os.path.join(self.workspace_dir, rel),
+                        encoding="utf-8",
+                        errors="replace",
+                    ) as f:
                         self.file_callback(node.step_id, rel, f.read())
                 except OSError:
                     logger.warning("could not read written file %s", rel)
         return outcome
 
-    def run_graph(self, graph: TaskGraph, cancel_event: threading.Event | None = None) -> RunReport:
+    def run_graph(
+        self, graph: TaskGraph, cancel_event: threading.Event | None = None
+    ) -> RunReport:
         self.start_ts = time.time()
         scheduler = DAGScheduler(
             self._wrapped_runner,

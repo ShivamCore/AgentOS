@@ -25,12 +25,14 @@ import logging
 import os
 import threading
 
+from typing import Any
+
 logger = logging.getLogger(__name__)
 
 _TASK_TTL: dict[str, int] = {
-    "plan":    3600,
-    "code":    300,
-    "debug":   120,
+    "plan": 3600,
+    "code": 300,
+    "debug": 120,
     "default": 300,
 }
 
@@ -49,12 +51,15 @@ def _make_key(model: str, prompt: str, system_prompt: str, temperature: float) -
     return "llm_cache:" + hashlib.sha256(raw.encode()).hexdigest()
 
 
-def _get_redis():
+def _get_redis() -> Any:
     """Lazy Redis client — returns None if unavailable."""
     try:
         import redis as redis_pkg
+
         url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-        client = redis_pkg.from_url(url, socket_connect_timeout=1, socket_timeout=1)
+        client: Any = redis_pkg.from_url(  # type: ignore[no-untyped-call]
+            url, socket_connect_timeout=1, socket_timeout=1
+        )
         client.ping()
         return client
     except Exception:
@@ -120,7 +125,7 @@ def set_cached(
             _errors += 1
 
 
-def get_stats() -> dict:
+def get_stats() -> dict[str, Any]:
     """Return cache hit/miss/error counters."""
     with _counter_lock:
         total = _hits + _misses

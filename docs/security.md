@@ -60,6 +60,8 @@ File tools resolve paths with `realpath` + `commonpath`, which rejects `..`, abs
 
 - With `API_KEY` set, mutating endpoints (`/tasks/create`, `/retry`, `/tasks/{id}/cancel`, `/agents/save`, `/agents/{name}/test`, `/system/start|stop`) require `X-API-Key` (constant-time compare). **Without it, the API is unauthenticated. Bind it to localhost only.** Read endpoints are never authenticated.
 - `POST /system/start|stop` (spawns and kills Redis/Celery) returns 403 unless `AGENTOS_ENABLE_PROCESS_CONTROL=1`.
+- `WS /ws/terminal` runs arbitrary shell commands **on the host** (it powers the UI's Terminal tab). It used to accept any client. With `start.sh` binding to `0.0.0.0`, that was remote code execution for anyone on the network. It now closes with code 1008 unless `AGENTOS_ENABLE_WEB_TERMINAL=1` is set **and** the client is on loopback **and** the API key matches (when `API_KEY` is set). Even when enabled, it is not sandboxed.
+- `start.sh` and `run_server.py` bind to `127.0.0.1` by default (`AGENTOS_HOST` overrides).
 - `/agents/save` and `/agents/{name}/content` used to accept arbitrary names, which allowed writing and reading `.md` files outside `agents/`. Names must now match `^[a-z][a-z0-9_-]{0,31}$`. Saved manifests still pass the loader's content policy, but **a key holder can rewrite agent system prompts**. That changes what the model is asked to do, not what the executor permits.
 - Request bodies reject unknown fields (`extra="forbid"`), and model names are pattern-checked.
 - Per-IP rate limiting is Redis-backed and **fails open** if Redis is down.
@@ -82,4 +84,4 @@ File tools resolve paths with `realpath` + `commonpath`, which rejects `..`, abs
 4. No per-task disk quota inside the workspace (writes are capped per file and per tool call; the tmpfs is capped).
 5. Abandoned (timed-out) step threads finish in the background, bounded by LLM and sandbox timeouts.
 6. Agent manifests' content policy (`agent/loader.py`) is a keyword blocklist. It is not a security boundary.
-7. `pip-audit` (2026-10-27): `pytest 8.4.2` PYSEC-2026-1845 (dev-only; fixed in 9.0.3, which needs a pytest-asyncio upgrade). `chromadb` advisories apply to its multi-tenant server API. chromadb is now an optional extra used only in embedded mode.
+7. `pip-audit -r requirements.txt`: no known vulnerabilities (pytest pinned to 9.0.x for PYSEC-2026-1845). `chromadb` advisories apply to its multi-tenant server API; chromadb is an optional extra used only in embedded mode. `npm audit` in `frontend/`: 0 vulnerabilities (next 16.4.3; dompurify forced to ≥3.4.17 via `overrides`).

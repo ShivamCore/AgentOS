@@ -13,9 +13,18 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, field_validator
+from dataclasses import dataclass, field
+from typing import Any
+
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    ValidationError,
+    field_validator,
+)
 
 from agent.lifecycle import NodeState, NodeStateMachine
 
@@ -35,7 +44,7 @@ class PlanPolicy:
     max_description_chars: int = 2000
     allowed_tools: frozenset[str] = DEFAULT_ALLOWED_TOOLS
     allowed_agents: frozenset[str] = DEFAULT_ALLOWED_AGENTS
-    extra: dict = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict[str, Any])
 
 
 class StepNode(BaseModel):
@@ -79,7 +88,13 @@ class StepNode(BaseModel):
         self._sm.transition(new)
 
 
-_PLANNER_FIELDS = {"step_id", "description", "required_tools", "preferred_agent", "dependencies"}
+_PLANNER_FIELDS = {
+    "step_id",
+    "description",
+    "required_tools",
+    "preferred_agent",
+    "dependencies",
+}
 
 
 class TaskGraph(BaseModel):
@@ -87,10 +102,15 @@ class TaskGraph(BaseModel):
     nodes: dict[str, StepNode] = Field(default_factory=dict)
 
     def is_complete(self) -> bool:
-        return bool(self.nodes) and all(n.state is NodeState.COMPLETED for n in self.nodes.values())
+        return bool(self.nodes) and all(
+            n.state is NodeState.COMPLETED for n in self.nodes.values()
+        )
 
     def has_failures(self) -> bool:
-        return any(n.state in (NodeState.FAILED, NodeState.TIMED_OUT) for n in self.nodes.values())
+        return any(
+            n.state in (NodeState.FAILED, NodeState.TIMED_OUT)
+            for n in self.nodes.values()
+        )
 
     def states(self) -> dict[str, str]:
         return {nid: n.status for nid, n in self.nodes.items()}
@@ -126,30 +146,44 @@ def validate_plan(graph: TaskGraph, policy: PlanPolicy | None = None) -> None:
     if not nodes:
         raise PlanValidationError("plan has no steps")
     if len(nodes) > policy.max_nodes:
-        raise PlanValidationError(f"plan has {len(nodes)} steps; limit is {policy.max_nodes}")
+        raise PlanValidationError(
+            f"plan has {len(nodes)} steps; limit is {policy.max_nodes}"
+        )
     for nid, n in nodes.items():
         if nid != n.step_id:
-            raise PlanValidationError(f"node key {nid!r} does not match step_id {n.step_id!r}")
+            raise PlanValidationError(
+                f"node key {nid!r} does not match step_id {n.step_id!r}"
+            )
         if len(n.description) > policy.max_description_chars:
-            raise PlanValidationError(f"step {nid} description exceeds {policy.max_description_chars} chars")
+            raise PlanValidationError(
+                f"step {nid} description exceeds {policy.max_description_chars} chars"
+            )
         if len(set(n.dependencies)) != len(n.dependencies):
             raise PlanValidationError(f"step {nid} lists a dependency twice")
         if nid in n.dependencies:
             raise PlanValidationError(f"step {nid} depends on itself")
         missing = [d for d in n.dependencies if d not in nodes]
         if missing:
-            raise PlanValidationError(f"step {nid} depends on unknown step(s) {missing}")
+            raise PlanValidationError(
+                f"step {nid} depends on unknown step(s) {missing}"
+            )
         unknown_tools = sorted(set(n.required_tools) - policy.allowed_tools)
         if unknown_tools:
-            raise PlanValidationError(f"step {nid} requests unavailable/unauthorized tool(s) {unknown_tools}")
+            raise PlanValidationError(
+                f"step {nid} requests unavailable/unauthorized tool(s) {unknown_tools}"
+            )
         if n.preferred_agent not in policy.allowed_agents:
-            raise PlanValidationError(f"step {nid} requests unknown agent {n.preferred_agent!r}")
+            raise PlanValidationError(
+                f"step {nid} requests unknown agent {n.preferred_agent!r}"
+            )
     order = _toposort(nodes)  # raises on cycles
     depth: dict[str, int] = {}
     for nid in order:
         depth[nid] = 1 + max((depth[d] for d in nodes[nid].dependencies), default=0)
     if max(depth.values()) > policy.max_depth:
-        raise PlanValidationError(f"dependency chain depth {max(depth.values())} exceeds {policy.max_depth}")
+        raise PlanValidationError(
+            f"dependency chain depth {max(depth.values())} exceeds {policy.max_depth}"
+        )
 
 
 def extract_json_from_text(text: str) -> str:
@@ -162,7 +196,9 @@ def extract_json_from_text(text: str) -> str:
     return text
 
 
-def parse_planner_dag(llm_output: str, fallback_task_id: str, policy: PlanPolicy | None = None) -> TaskGraph:
+def parse_planner_dag(
+    llm_output: str, fallback_task_id: str, policy: PlanPolicy | None = None
+) -> TaskGraph:
     """Parse and validate planner output. Raises PlanValidationError on any problem."""
     if not isinstance(llm_output, str) or not llm_output.strip():
         raise PlanValidationError("planner returned empty output")
@@ -174,9 +210,13 @@ def parse_planner_dag(llm_output: str, fallback_task_id: str, policy: PlanPolicy
 
         data = extract_json_safely(llm_output)
         if data is None:
-            raise PlanValidationError(f"planner output is not valid JSON: {exc}") from exc
+            raise PlanValidationError(
+                f"planner output is not valid JSON: {exc}"
+            ) from exc
     if not isinstance(data, dict):
-        raise PlanValidationError("planner output must be a JSON object with a 'steps' list")
+        raise PlanValidationError(
+            "planner output must be a JSON object with a 'steps' list"
+        )
     steps = data.get("steps")
     if not isinstance(steps, list):
         raise PlanValidationError("planner output is missing a 'steps' list")
@@ -187,19 +227,26 @@ def parse_planner_dag(llm_output: str, fallback_task_id: str, policy: PlanPolicy
             raise PlanValidationError(f"step #{i} is not an object")
         extra = set(raw) - _PLANNER_FIELDS
         if extra:
-            raise PlanValidationError(f"step #{i} has unsupported field(s) {sorted(extra)}")
+            raise PlanValidationError(
+                f"step #{i} has unsupported field(s) {sorted(extra)}"
+            )
         # Small models often emit integer ids; normalise the type only (bools are not ids).
         raw = dict(raw)
-        if isinstance(raw.get("step_id"), int) and not isinstance(raw.get("step_id"), bool):
+        if isinstance(raw.get("step_id"), int) and not isinstance(
+            raw.get("step_id"), bool
+        ):
             raw["step_id"] = str(raw["step_id"])
         if isinstance(raw.get("dependencies"), list):
             raw["dependencies"] = [
-                str(d) if isinstance(d, int) and not isinstance(d, bool) else d for d in raw["dependencies"]
+                str(d) if isinstance(d, int) and not isinstance(d, bool) else d
+                for d in raw["dependencies"]
             ]
         try:
             node = StepNode(**raw)
         except ValidationError as exc:
-            raise PlanValidationError(f"step #{i} is invalid: {exc.errors(include_url=False)}") from exc
+            raise PlanValidationError(
+                f"step #{i} is invalid: {exc.errors(include_url=False)}"
+            ) from exc
         if node.step_id in graph.nodes:
             raise PlanValidationError(f"duplicate step_id {node.step_id!r}")
         graph.nodes[node.step_id] = node

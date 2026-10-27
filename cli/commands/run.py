@@ -13,33 +13,33 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Optional
 
+import requests
 import typer
+
 from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
 
+from agent.lifecycle import RUN_TERMINAL
 from cli import client
 from cli.client import APIError
 from cli.config import cfg
 
 console = Console()
 
-from agent.lifecycle import RUN_TERMINAL
-
 _DONE = {s.value for s in RUN_TERMINAL}
 
 
 def _build_live_panel(
-    status: str, 
-    nodes: list[dict], 
-    logs: list[dict], 
-    model: str, 
-    silent: bool = False, 
+    status: str,
+    nodes: list[dict],
+    logs: list[dict],
+    model: str,
+    silent: bool = False,
     watch: bool = False,
-    step_start_times: dict[str, float] | None = None
+    step_start_times: dict[str, float] | None = None,
 ) -> Panel:
     """Builds the premium live-updating display panel using Rich."""
     lines = []
@@ -50,14 +50,16 @@ def _build_live_panel(
     elif status == "PLANNED":
         lines.append(Text.assemble(("🧠 Planned DAG...", "cyan")))
     elif status == "RUNNING":
-        lines.append(Text.assemble(("⚙️ Executing...", "yellow"), (f"  Model: {model}", "dim")))
+        lines.append(
+            Text.assemble(("⚙️ Executing...", "yellow"), (f"  Model: {model}", "dim"))
+        )
     elif status == "COMPLETED":
         lines.append(Text.assemble(("✅ Task Completed", "bold green")))
     elif status in ("FAILED", "TIMED_OUT", "CANCELLED", "PARTIAL_SUCCESS"):
         lines.append(Text.assemble((f"❌ Task {status}", "bold red")))
     else:
         lines.append(Text(f"Status: {status}"))
-    
+
     lines.append(Text(""))
 
     # Nodes / Steps Display
@@ -66,32 +68,54 @@ def _build_live_panel(
         n_status = node.get("status", "PENDING")
         desc = node.get("description", "Unknown step")
         nid = node.get("node_id", "")
-        
+
         if n_status == "COMPLETED":
-            lines.append(Text.assemble((f"  ✓ Step {i}/{total}: ", "green"), (desc, "dim")))
+            lines.append(
+                Text.assemble((f"  ✓ Step {i}/{total}: ", "green"), (desc, "dim"))
+            )
         elif n_status in ("FAILED", "TIMED_OUT", "BLOCKED", "CANCELLED"):
-            lines.append(Text.assemble((f"  ✗ Step {i}/{total} [{n_status}]: ", "red"), (desc, "red")))
+            lines.append(
+                Text.assemble(
+                    (f"  ✗ Step {i}/{total} [{n_status}]: ", "red"), (desc, "red")
+                )
+            )
         elif n_status == "RUNNING":
             eta_str = ""
             if step_start_times and nid in step_start_times:
                 eta_str = f" ({time.time() - step_start_times[nid]:.0f}s elapsed)"
-            lines.append(Text.assemble((f"  ⚙️ Step {i}/{total}: ", "yellow"), (desc, "bold"), (eta_str, "dim")))
+            lines.append(
+                Text.assemble(
+                    (f"  ⚙️ Step {i}/{total}: ", "yellow"),
+                    (desc, "bold"),
+                    (eta_str, "dim"),
+                )
+            )
         else:
             if watch:
-                lines.append(Text.assemble((f"  ○ Step {i}/{total}: ", "dim"), (desc, "dim")))
-            
+                lines.append(
+                    Text.assemble((f"  ○ Step {i}/{total}: ", "dim"), (desc, "dim"))
+                )
+
     if not silent and status == "RUNNING":
         lines.append(Text(""))
         # Grab the last relevant log actions to show what the agent is currently doing
-        recent_logs = [l for l in logs if l.get("type") in ("action", "error", "result")][-3:]
+        recent_logs = [
+            entry
+            for entry in logs
+            if entry.get("type") in ("action", "error", "result")
+        ][-3:]
         for log in recent_logs:
             l_type = log.get("type", "")
-            content = (log.get("content") or "").strip().split("\n")[0] # keep it one line
+            content = (
+                (log.get("content") or "").strip().split("\n")[0]
+            )  # keep it one line
             if len(content) > 80:
                 content = content[:77] + "..."
-            
+
             icon = "🛠 " if l_type == "action" else "⚠️ " if l_type == "error" else "💡"
-            color = "cyan" if l_type == "action" else "red" if l_type == "error" else "dim"
+            color = (
+                "cyan" if l_type == "action" else "red" if l_type == "error" else "dim"
+            )
             lines.append(Text.assemble((f"    {icon} {content}", color)))
 
     return Panel(
@@ -103,19 +127,53 @@ def _build_live_panel(
 
 
 def run_task(
-    task: str = typer.Argument(..., help="Task description — what you want AgentOS to build or fix."),
-    title: Optional[str] = typer.Option(None, "--title", "-t", help="Short task title (defaults to first 60 chars of task)."),
-    task_type: str = typer.Option("build_app", "--type", help="Task type: build_app | fix_bug | refactor_code | create_api"),
-    stack: Optional[list[str]] = typer.Option(None, "--stack", "-s", help="Tech stack (repeatable): --stack Python --stack FastAPI"),
-    feature: Optional[list[str]] = typer.Option(None, "--feature", "-f", help="Features to include (repeatable)."),
+    task: str = typer.Argument(
+        ..., help="Task description — what you want AgentOS to build or fix."
+    ),
+    title: str | None = typer.Option(
+        None,
+        "--title",
+        "-t",
+        help="Short task title (defaults to first 60 chars of task).",
+    ),
+    task_type: str = typer.Option(
+        "build_app",
+        "--type",
+        help="Task type: build_app | fix_bug | refactor_code | create_api",
+    ),
+    stack: list[str] | None = typer.Option(
+        None,
+        "--stack",
+        "-s",
+        help="Tech stack (repeatable): --stack Python --stack FastAPI",
+    ),
+    feature: list[str] | None = typer.Option(
+        None, "--feature", "-f", help="Features to include (repeatable)."
+    ),
     steps: int = typer.Option(10, "--steps", help="Maximum DAG steps (1-50)."),
     timeout: int = typer.Option(300, "--timeout", help="Hard timeout in seconds."),
-    risk: str = typer.Option("balanced", "--risk", help="Risk level: safe | balanced | aggressive"),
-    model: str = typer.Option(None, "--model", "-m", help="Ollama model override (default: Auto)"),
+    risk: str = typer.Option(
+        "balanced", "--risk", help="Risk level: safe | balanced | aggressive"
+    ),
+    model: str = typer.Option(
+        None, "--model", "-m", help="Ollama model override (default: Auto)"
+    ),
     json_out: bool = typer.Option(False, "--json", help="Dump raw JSON continuously."),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Stream all raw full logs bypassing the pretty UI."),
-    silent: bool = typer.Option(False, "--silent", help="Suppress all output except the final result JSON."),
-    watch: bool = typer.Option(False, "--watch", "-w", help="Live stream mode — show all DAG nodes continuously updating."),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Stream all raw full logs bypassing the pretty UI.",
+    ),
+    silent: bool = typer.Option(
+        False, "--silent", help="Suppress all output except the final result JSON."
+    ),
+    watch: bool = typer.Option(
+        False,
+        "--watch",
+        "-w",
+        help="Live stream mode — show all DAG nodes continuously updating.",
+    ),
 ) -> None:
     """Submit a task and stream live progress until it completes."""
 
@@ -127,17 +185,21 @@ def run_task(
     valid_types = {"build_app", "fix_bug", "refactor_code", "create_api"}
     if task_type not in valid_types:
         if not silent and not json_out:
-            console.print(f"[red]✗ Invalid --type '{task_type}'. Must be one of: {', '.join(sorted(valid_types))}[/red]")
+            console.print(
+                f"[red]✗ Invalid --type '{task_type}'. Must be one of: {', '.join(sorted(valid_types))}[/red]"
+            )
         raise typer.Exit(code=1)
 
     if not silent and not json_out and not verbose:
         console.print()
-        console.print(Panel(
-            f"[bold]{_title}[/bold]\n[dim]{task}[/dim]",
-            title="[bold blue]⚡ AgentOS Task[/bold blue]",
-            border_style="blue",
-            expand=False,
-        ))
+        console.print(
+            Panel(
+                f"[bold]{_title}[/bold]\n[dim]{task}[/dim]",
+                title="[bold blue]⚡ AgentOS Task[/bold blue]",
+                border_style="blue",
+                expand=False,
+            )
+        )
         # ── INSTANT FEEDBACK ──
         console.print()
         console.print("  [dim]🧠 Initializing AgentOS...[/dim]")
@@ -160,10 +222,10 @@ def run_task(
     except APIError as e:
         if not silent:
             console.print(f"[red]✗ Failed to create task: {e.detail}[/red]")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
     task_id: str = resp["task_id"]
-    
+
     if json_out:
         print(json.dumps({"event": "task_created", "task_id": task_id}))
 
@@ -173,36 +235,54 @@ def run_task(
 
     # ── Interactive Live Stream (Premium UI) ──
     if not silent and not verbose and not json_out:
-        with Live(_build_live_panel(current_status, [], [], _model, silent, watch, step_start_times), console=console, refresh_per_second=4) as live:
+        with Live(
+            _build_live_panel(
+                current_status, [], [], _model, silent, watch, step_start_times
+            ),
+            console=console,
+            refresh_per_second=4,
+        ) as live:
             while current_status not in _DONE:
-                time.sleep(1.0) # slightly faster polling updates
+                time.sleep(1.0)  # slightly faster polling updates
                 try:
                     detail = client.get_task(task_id)
                     logs = client.get_task_logs(task_id)
-                except Exception:
+                except (requests.RequestException, APIError):
                     continue  # network blip, just continue polling
-                
+
                 current_status = detail.get("status", "CREATED")
                 nodes = detail.get("nodes", [])
-                
+
                 # Update ETA trackers
                 for n in nodes:
                     nid = n.get("node_id")
                     if n.get("status") == "RUNNING" and nid not in step_start_times:
                         step_start_times[nid] = time.time()
-                
-                live.update(_build_live_panel(current_status, nodes, logs, _model, silent, watch, step_start_times))
+
+                live.update(
+                    _build_live_panel(
+                        current_status,
+                        nodes,
+                        logs,
+                        _model,
+                        silent,
+                        watch,
+                        step_start_times,
+                    )
+                )
 
     # ── Verbose Raw Logger Stream ──
     elif verbose and not silent and not json_out:
-        console.print(f"[dim]Task {task_id} submitted. Streaming verbose logs...[/dim]\n")
+        console.print(
+            f"[dim]Task {task_id} submitted. Streaming verbose logs...[/dim]\n"
+        )
         while current_status not in _DONE:
             time.sleep(cfg.poll_interval)
             try:
                 detail = client.get_task(task_id)
                 logs = client.get_task_logs(task_id)
                 current_status = detail.get("status", "CREATED")
-                
+
                 for log in logs:
                     l_id = log.get("id")
                     if l_id not in seen_logs:
@@ -210,10 +290,18 @@ def run_task(
                         node = log.get("node_id", "")
                         prefix = f"[dim][{node}][/dim] " if node else ""
                         l_type = log.get("type", "")
-                        style = "red" if l_type == "error" else "cyan" if l_type == "action" else "dim"
-                        console.print(f"{prefix}[{style}]{log.get('content', '').strip()}[/{style}]")
-            except Exception:
-                pass
+                        style = (
+                            "red"
+                            if l_type == "error"
+                            else "cyan"
+                            if l_type == "action"
+                            else "dim"
+                        )
+                        console.print(
+                            f"{prefix}[{style}]{log.get('content', '').strip()}[/{style}]"
+                        )
+            except (requests.RequestException, APIError):
+                pass  # transient API error; keep polling
 
     # ── JSON Poller Stream ──
     elif json_out:
@@ -223,8 +311,8 @@ def run_task(
                 detail = client.get_task(task_id)
                 current_status = detail.get("status", "CREATED")
                 print(json.dumps({"event": "status_update", "status": current_status}))
-            except Exception:
-                pass
+            except (requests.RequestException, APIError):
+                pass  # transient API error; keep polling
 
     # ── Silent Poller ──
     elif silent:
@@ -233,18 +321,20 @@ def run_task(
             try:
                 detail = client.get_task(task_id)
                 current_status = detail.get("status", "CREATED")
-            except Exception:
-                pass
+            except (requests.RequestException, APIError):
+                pass  # transient API error; keep polling
 
     # ── Final Output ────────────────────────────────────────────────────────
     if not json_out and not silent:
         # Call the result command natively to display the structured summary
         from cli.commands.result import _display_result
+
         _display_result(task_id, json_out=False)
 
     if silent:
         from cli.commands.result import _display_result
-        _display_result(task_id, json_out=True) # Always JSON if silent
+
+        _display_result(task_id, json_out=True)  # Always JSON if silent
 
     if current_status != "COMPLETED":
         raise typer.Exit(code=1)

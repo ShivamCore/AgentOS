@@ -24,22 +24,22 @@ import enum
 import threading
 
 
-class NodeState(str, enum.Enum):
-    PENDING = "PENDING"        # waiting on dependencies
-    READY = "READY"            # dependencies satisfied, waiting for a worker slot
+class NodeState(enum.StrEnum):
+    PENDING = "PENDING"  # waiting on dependencies
+    READY = "READY"  # dependencies satisfied, waiting for a worker slot
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     TIMED_OUT = "TIMED_OUT"
     CANCELLED = "CANCELLED"
-    BLOCKED = "BLOCKED"        # never ran because a dependency did not complete
+    BLOCKED = "BLOCKED"  # never ran because a dependency did not complete
 
 
-class RunState(str, enum.Enum):
+class RunState(enum.StrEnum):
     CREATED = "CREATED"
     PLANNED = "PLANNED"
     RUNNING = "RUNNING"
-    COMPLETED = "COMPLETED"              # every node COMPLETED
+    COMPLETED = "COMPLETED"  # every node COMPLETED
     PARTIAL_SUCCESS = "PARTIAL_SUCCESS"  # some nodes COMPLETED, some did not
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
@@ -47,24 +47,50 @@ class RunState(str, enum.Enum):
 
 
 NODE_TERMINAL = frozenset(
-    {NodeState.COMPLETED, NodeState.FAILED, NodeState.TIMED_OUT, NodeState.CANCELLED, NodeState.BLOCKED}
+    {
+        NodeState.COMPLETED,
+        NodeState.FAILED,
+        NodeState.TIMED_OUT,
+        NodeState.CANCELLED,
+        NodeState.BLOCKED,
+    }
 )
 RUN_TERMINAL = frozenset(
-    {RunState.COMPLETED, RunState.PARTIAL_SUCCESS, RunState.FAILED, RunState.CANCELLED, RunState.TIMED_OUT}
+    {
+        RunState.COMPLETED,
+        RunState.PARTIAL_SUCCESS,
+        RunState.FAILED,
+        RunState.CANCELLED,
+        RunState.TIMED_OUT,
+    }
 )
 RUN_ACTIVE = frozenset({RunState.CREATED, RunState.PLANNED, RunState.RUNNING})
 
 _NODE_TRANSITIONS: dict[NodeState, frozenset[NodeState]] = {
-    NodeState.PENDING: frozenset({NodeState.READY, NodeState.BLOCKED, NodeState.CANCELLED}),
-    NodeState.READY: frozenset({NodeState.RUNNING, NodeState.BLOCKED, NodeState.CANCELLED}),
+    NodeState.PENDING: frozenset(
+        {NodeState.READY, NodeState.BLOCKED, NodeState.CANCELLED}
+    ),
+    NodeState.READY: frozenset(
+        {NodeState.RUNNING, NodeState.BLOCKED, NodeState.CANCELLED}
+    ),
     NodeState.RUNNING: frozenset(
-        {NodeState.COMPLETED, NodeState.FAILED, NodeState.TIMED_OUT, NodeState.CANCELLED, NodeState.READY}
+        {
+            NodeState.COMPLETED,
+            NodeState.FAILED,
+            NodeState.TIMED_OUT,
+            NodeState.CANCELLED,
+            NodeState.READY,
+        }
     ),
 }
 
 _RUN_TRANSITIONS: dict[RunState, frozenset[RunState]] = {
-    RunState.CREATED: frozenset({RunState.PLANNED, RunState.RUNNING, RunState.FAILED, RunState.CANCELLED}),
-    RunState.PLANNED: frozenset({RunState.RUNNING, RunState.FAILED, RunState.CANCELLED}),
+    RunState.CREATED: frozenset(
+        {RunState.PLANNED, RunState.RUNNING, RunState.FAILED, RunState.CANCELLED}
+    ),
+    RunState.PLANNED: frozenset(
+        {RunState.RUNNING, RunState.FAILED, RunState.CANCELLED}
+    ),
     RunState.RUNNING: frozenset(RUN_TERMINAL),
     # Only FAILED / TIMED_OUT / CANCELLED / PARTIAL_SUCCESS runs may be re-queued.
     RunState.FAILED: frozenset({RunState.CREATED}),
@@ -74,18 +100,22 @@ _RUN_TRANSITIONS: dict[RunState, frozenset[RunState]] = {
 }
 
 
-class InvalidTransition(RuntimeError):
+class InvalidTransitionError(RuntimeError):
     pass
 
 
 def check_node_transition(old: NodeState, new: NodeState) -> None:
     if new not in _NODE_TRANSITIONS.get(old, frozenset()):
-        raise InvalidTransition(f"node transition {old.value} -> {new.value} is not allowed")
+        raise InvalidTransitionError(
+            f"node transition {old.value} -> {new.value} is not allowed"
+        )
 
 
 def check_run_transition(old: RunState, new: RunState) -> None:
     if new not in _RUN_TRANSITIONS.get(old, frozenset()):
-        raise InvalidTransition(f"run transition {old.value} -> {new.value} is not allowed")
+        raise InvalidTransitionError(
+            f"run transition {old.value} -> {new.value} is not allowed"
+        )
 
 
 def summarize_run(node_states: list[NodeState]) -> RunState:

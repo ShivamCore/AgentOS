@@ -8,15 +8,16 @@ are thin dispatchers only.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import uuid
-from typing import Any
+
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
 
 from agent.lifecycle import RUN_ACTIVE, RUN_TERMINAL, NodeState, RunState
 from backend.api.rate_limiter import RateLimiter
@@ -32,20 +33,32 @@ from backend.models.sql_models import (
 )
 from backend.workers.tasks import run_agent_task
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Tasks"])
 _limiter = RateLimiter()
 
 
-
 class ConstraintInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    max_time: int = Field(default=300, ge=10, le=3600, description="Maximum wall-clock seconds for this task.")
-    max_steps: int = Field(default=15, ge=1, le=50, description="Maximum DAG nodes to execute.")
+    max_time: int = Field(
+        default=300,
+        ge=10,
+        le=3600,
+        description="Maximum wall-clock seconds for this task.",
+    )
+    max_steps: int = Field(
+        default=15, ge=1, le=50, description="Maximum DAG nodes to execute."
+    )
     risk_level: str = Field(default="balanced", pattern="^(safe|balanced|aggressive)$")
-    file_scope: list[str] = Field(default_factory=list, max_length=20,
-                                  description="Restrict file writes to these workspace-relative directories.")
+    file_scope: list[str] = Field(
+        default_factory=list,
+        max_length=20,
+        description="Restrict file writes to these workspace-relative directories.",
+    )
 
 
 class TaskInput(BaseModel):
@@ -53,7 +66,9 @@ class TaskInput(BaseModel):
 
     title: str = Field(..., min_length=3, max_length=200)
     description: str = Field(..., min_length=3, max_length=8_000)
-    task_type: str = Field(..., pattern="^(build_app|fix_bug|refactor_code|create_api)$")
+    task_type: str = Field(
+        ..., pattern="^(build_app|fix_bug|refactor_code|create_api)$"
+    )
     tech_stack: list[str] = Field(default_factory=list, max_length=20)
     features: list[str] = Field(default_factory=list, max_length=30)
     constraints: ConstraintInput = Field(default_factory=ConstraintInput)
@@ -103,6 +118,7 @@ class ExplainResponse(BaseModel):
 
 # ── Service Helpers ─────────────────────────────────────────────────────────────
 
+
 def _build_planner_prompt(task: TaskInput) -> str:
     """Deterministic, structured prompt from a TaskInput — no raw user string passed."""
     parts = [
@@ -134,6 +150,7 @@ def _check_backpressure(db: Session) -> None:
 
 # ── Endpoints ───────────────────────────────────────────────────────────────────
 
+
 @router.post(
     "/tasks/create",
     response_model=TaskResponse,
@@ -156,7 +173,9 @@ def create_task(
             .first()
         )
         if existing:
-            return TaskResponse(task_id=existing.id, status=existing.status, deduplicated=True)
+            return TaskResponse(
+                task_id=existing.id, status=existing.status, deduplicated=True
+            )
 
     _check_backpressure(db)
 
@@ -179,10 +198,16 @@ def create_task(
     except IntegrityError:
         # Concurrent request with the same idempotency key won the race.
         db.rollback()
-        existing = db.query(TaskRecord).filter(TaskRecord.idempotency_key == task.idempotency_key).first()
+        existing = (
+            db.query(TaskRecord)
+            .filter(TaskRecord.idempotency_key == task.idempotency_key)
+            .first()
+        )
         if existing is None:
             raise
-        return TaskResponse(task_id=existing.id, status=existing.status, deduplicated=True)
+        return TaskResponse(
+            task_id=existing.id, status=existing.status, deduplicated=True
+        )
 
     _dispatch(db, record, task.model)
     logger.info("Task %s created (type=%s)", task_id, task.task_type)
@@ -192,13 +217,19 @@ def create_task(
 def _dispatch(db: Session, record: TaskRecord, model: str) -> None:
     """Enqueue the task; if the broker is unreachable, record the failure instead of leaving it CREATED."""
     try:
-        run_agent_task.apply_async(args=[record.id, model], expires=settings.TASK_TIMEOUT_SECONDS * 2)
+        run_agent_task.apply_async(
+            args=[record.id, model], expires=settings.TASK_TIMEOUT_SECONDS * 2
+        )
     except Exception as exc:
         logger.error("dispatch failed for task %s: %s", record.id, exc)
         record.status = RunState.FAILED.value
-        record.error = f"could not enqueue task (is Redis/Celery running?): {type(exc).__name__}"
+        record.error = (
+            f"could not enqueue task (is Redis/Celery running?): {type(exc).__name__}"
+        )
         db.commit()
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=record.error) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=record.error
+        ) from exc
 
 
 @router.get(
@@ -209,17 +240,17 @@ def _dispatch(db: Session, record: TaskRecord, model: str) -> None:
 def get_task(task_id: str, db: Session = Depends(get_db)) -> TaskDetail:
     task = db.query(TaskRecord).filter(TaskRecord.id == task_id).first()
     if not task:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Task not found"
+        )
 
     nodes = db.query(TaskNodeRecord).filter(TaskNodeRecord.task_id == task_id).all()
 
     # Attempt to recover the original title from stored JSON
     title: str | None = None
     if task.task_input_json:
-        try:
+        with contextlib.suppress(json.JSONDecodeError, AttributeError):
             title = json.loads(task.task_input_json).get("title")
-        except (json.JSONDecodeError, AttributeError):
-            pass
 
     result = None
     if task.result_json:
@@ -244,7 +275,9 @@ def get_task(task_id: str, db: Session = Depends(get_db)) -> TaskDetail:
                 "files_modified": n.files_modified,
                 "attempts": n.attempts,
                 "error": n.error,
-                "dependencies": json.loads(n.dependencies_json) if n.dependencies_json else [],
+                "dependencies": (
+                    json.loads(n.dependencies_json) if n.dependencies_json else []
+                ),
             }
             for n in nodes
         ],
@@ -259,7 +292,9 @@ def get_task(task_id: str, db: Session = Depends(get_db)) -> TaskDetail:
 def get_task_steps(task_id: str, db: Session = Depends(get_db)) -> list[StepDetail]:
     nodes = db.query(TaskNodeRecord).filter(TaskNodeRecord.task_id == task_id).all()
     if not nodes:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No steps found for task")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No steps found for task"
+        )
 
     results: list[StepDetail] = []
     for node in nodes:
@@ -275,8 +310,12 @@ def get_task_steps(task_id: str, db: Session = Depends(get_db)) -> list[StepDeta
                 description=node.description,
                 status=node.status,
                 execution_logs=[
-                    {"type": l.log_type, "content": l.content, "time": l.created_at}
-                    for l in logs
+                    {
+                        "type": rec.log_type,
+                        "content": rec.content,
+                        "time": rec.created_at,
+                    }
+                    for rec in logs
                 ],
             )
         )
@@ -291,7 +330,9 @@ def get_task_steps(task_id: str, db: Session = Depends(get_db)) -> list[StepDeta
 def explain_task(task_id: str, db: Session = Depends(get_db)) -> ExplainResponse:
     planner_logs = (
         db.query(LogRecord)
-        .filter(LogRecord.task_id == task_id, LogRecord.log_type.in_(["action", "result"]))
+        .filter(
+            LogRecord.task_id == task_id, LogRecord.log_type.in_(["action", "result"])
+        )
         .order_by(LogRecord.seq_id.asc())
         .limit(5)
         .all()
@@ -304,12 +345,14 @@ def explain_task(task_id: str, db: Session = Depends(get_db)) -> ExplainResponse
     nodes = db.query(TaskNodeRecord).filter(TaskNodeRecord.task_id == task_id).all()
 
     return ExplainResponse(
-        planner_reasoning=[l.content for l in planner_logs],
+        planner_reasoning=[rec.content for rec in planner_logs],
         agent_selection=[
             {"agent": s.selected_agent, "confidence": s.confidence, "reason": s.reason}
             for s in selection_logs
         ],
-        tool_usage_decisions=[{"node": n.node_id, "goal": n.description} for n in nodes],
+        tool_usage_decisions=[
+            {"node": n.node_id, "goal": n.description} for n in nodes
+        ],
     )
 
 
@@ -364,19 +407,23 @@ def get_logs(task_id: str, db: Session = Depends(get_db)) -> list[dict[str, Any]
     )
     return [
         {
-            "id": l.id,
-            "seq_id": l.seq_id,
-            "node_id": l.node_id,
-            "type": l.log_type,
-            "content": l.content,
-            "time": l.created_at,
+            "id": rec.id,
+            "seq_id": rec.seq_id,
+            "node_id": rec.node_id,
+            "type": rec.log_type,
+            "content": rec.content,
+            "time": rec.created_at,
         }
-        for l in logs
+        for rec in logs
     ]
 
 
-_RETRYABLE = {RunState.FAILED.value, RunState.TIMED_OUT.value, RunState.CANCELLED.value,
-              RunState.PARTIAL_SUCCESS.value}
+_RETRYABLE = {
+    RunState.FAILED.value,
+    RunState.TIMED_OUT.value,
+    RunState.CANCELLED.value,
+    RunState.PARTIAL_SUCCESS.value,
+}
 
 
 @router.post(
@@ -389,7 +436,9 @@ _RETRYABLE = {RunState.FAILED.value, RunState.TIMED_OUT.value, RunState.CANCELLE
 def retry_task(task_id: str, db: Session = Depends(get_db)) -> TaskResponse:
     task = db.query(TaskRecord).filter(TaskRecord.id == task_id).first()
     if not task:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Task not found"
+        )
     if task.status not in _RETRYABLE:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -399,10 +448,8 @@ def retry_task(task_id: str, db: Session = Depends(get_db)) -> TaskResponse:
 
     model = "Auto"
     if task.task_input_json:
-        try:
+        with contextlib.suppress(json.JSONDecodeError):
             model = json.loads(task.task_input_json).get("model", "Auto") or "Auto"
-        except json.JSONDecodeError:
-            pass
     db.query(TaskNodeRecord).filter(TaskNodeRecord.task_id == task_id).delete()
     task.status = RunState.CREATED.value
     task.started_at = None
@@ -426,9 +473,14 @@ def retry_task(task_id: str, db: Session = Depends(get_db)) -> TaskResponse:
 def cancel_task(task_id: str, db: Session = Depends(get_db)) -> TaskResponse:
     task = db.query(TaskRecord).filter(TaskRecord.id == task_id).first()
     if not task:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Task not found"
+        )
     if task.status in {s.value for s in RUN_TERMINAL}:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Task is already {task.status}.")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Task is already {task.status}.",
+        )
     task.cancel_requested = True
     if task.status == RunState.CREATED.value:
         # Not started yet: the worker will see the flag and skip it.
@@ -454,7 +506,9 @@ def get_task_result(task_id: str, db: Session = Depends(get_db)) -> TaskResult:
     """
     task = db.query(TaskRecord).filter(TaskRecord.id == task_id).first()
     if not task:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Task not found"
+        )
 
     # ── Files modified ────────────────────────────────────────────────────────
     edits = db.query(FileEditRecord).filter(FileEditRecord.task_id == task_id).all()
@@ -468,14 +522,22 @@ def get_task_result(task_id: str, db: Session = Depends(get_db)) -> TaskResult:
         .limit(20)
         .all()
     )
-    errors = [l.content for l in error_logs if l.content]
+    errors = [rec.content for rec in error_logs if rec.content]
 
     # ── Node summary ──────────────────────────────────────────────────────────
     nodes = db.query(TaskNodeRecord).filter(TaskNodeRecord.task_id == task_id).all()
     total = len(nodes)
     completed = sum(1 for n in nodes if n.status == NodeState.COMPLETED.value)
-    failed = sum(1 for n in nodes if n.status in (NodeState.FAILED.value, NodeState.TIMED_OUT.value))
-    blocked = sum(1 for n in nodes if n.status in (NodeState.BLOCKED.value, NodeState.CANCELLED.value))
+    failed = sum(
+        1
+        for n in nodes
+        if n.status in (NodeState.FAILED.value, NodeState.TIMED_OUT.value)
+    )
+    blocked = sum(
+        1
+        for n in nodes
+        if n.status in (NodeState.BLOCKED.value, NodeState.CANCELLED.value)
+    )
     if task.error and task.error not in errors:
         errors = [task.error, *errors]
 
@@ -500,7 +562,11 @@ def get_task_result(task_id: str, db: Session = Depends(get_db)) -> TaskResult:
             f"Retry the task: `agentos retry {task_id}`",
             "Check errors above for what went wrong.",
         ]
-    elif task.status in (RunState.FAILED.value, RunState.TIMED_OUT.value, RunState.CANCELLED.value):
+    elif task.status in (
+        RunState.FAILED.value,
+        RunState.TIMED_OUT.value,
+        RunState.CANCELLED.value,
+    ):
         summary = f"Task {task.status.lower().replace('_', ' ')} after {completed}/{total} steps completed."
         next_steps = [
             f"Retry: `agentos retry {task_id}`",

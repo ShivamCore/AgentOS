@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import os
 import sys
+
 from typing import Any
 
 import requests
+
 from requests import Response
 
 from cli.config import cfg
@@ -72,6 +74,7 @@ def _raise(r: Response) -> None:
 
 
 # ── API methods ───────────────────────────────────────────────────────────────
+
 
 def create_task(
     title: str,

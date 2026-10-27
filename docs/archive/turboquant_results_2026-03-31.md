@@ -205,7 +205,7 @@
 
 ```python
 # agent/utils/model_router.py
-_TIER_ACCURACY = ['llama3.1:8b', 'deepseek-coder:6.7b']   # plan tasks
-_TIER_SPEED    = ['deepseek-coder:1.3b', 'qwen2.5-coder:1.5b-base']  # code tasks
-_TIER_BALANCED = ['llama3.2:3b', 'qwen2.5:3b']            # debug tasks
+_TIER_ACCURACY = ["llama3.1:8b", "deepseek-coder:6.7b"]  # plan tasks
+_TIER_SPEED = ["deepseek-coder:1.3b", "qwen2.5-coder:1.5b-base"]  # code tasks
+_TIER_BALANCED = ["llama3.2:3b", "qwen2.5:3b"]  # debug tasks
 ```

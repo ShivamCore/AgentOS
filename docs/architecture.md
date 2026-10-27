@@ -64,7 +64,7 @@ PENDING ──► READY ──► RUNNING ──► COMPLETED | FAILED | TIMED_O
    └──────────┴──────────────────► BLOCKED | CANCELLED
 ```
 
-`NodeStateMachine.transition` raises `InvalidTransition` for anything else, so a terminal node can never change again and a node can never run without passing through `READY`.
+`NodeStateMachine.transition` raises `InvalidTransitionError` for anything else, so a terminal node can never change again and a node can never run without passing through `READY`.
 
 Run outcome: all nodes `COMPLETED` → `COMPLETED`; at least one `COMPLETED` → `PARTIAL_SUCCESS`; none → `FAILED`. Run-level cancellation or deadline overrides this with `CANCELLED` / `TIMED_OUT`.
 

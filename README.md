@@ -82,7 +82,7 @@ pytest tests/e2e -v
 ## Tests
 
 ```bash
-pytest -q                     # 276 passed, 9 skipped on the audit machine (skips: Docker-only, opt-in Ollama, Linux-only)
+pytest -q                     # 288 passed, 9 skipped on the audit machine (skips: Docker-only, opt-in Ollama, Linux-only)
 pytest -m docker              # real-container enforcement (requires Docker + make sandbox-image)
 AGENTOS_TEST_OLLAMA_MODEL=phi3.5 pytest -m ollama
 ```

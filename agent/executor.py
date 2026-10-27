@@ -19,14 +19,17 @@ from __future__ import annotations
 
 import ast
 import os
-from collections.abc import Iterable
-from typing import Any, Literal
+
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from agent.llm import extract_json_safely
 from agent.tools.filesystem import PathEscapeError, resolve_in_workspace
 from agent.tools.registry import registry
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 MAX_FILES_PER_STEP = 10
 MAX_COMMANDS_PER_STEP = 3
@@ -55,7 +58,10 @@ def extract_json_payload(text: str) -> dict[str, Any]:
     empty: dict[str, Any] = {"files": [], "commands": [], "error": None}
     data = extract_json_safely(text or "")
     if not isinstance(data, dict):
-        return {**empty, "error": "INVALID OUTPUT FORMAT: response is not a JSON object"}
+        return {
+            **empty,
+            "error": "INVALID OUTPUT FORMAT: response is not a JSON object",
+        }
     raw = dict(data)
     commands = raw.get("commands")
     if commands is None:
@@ -68,14 +74,27 @@ def extract_json_payload(text: str) -> dict[str, Any]:
     raw["commands"] = commands
     for f in raw.get("files") or []:
         if isinstance(f, dict) and f.get("action") not in (None, "write"):
-            return {**empty, "error": f"UNSUPPORTED ACTION: file action {f.get('action')!r}; only 'write' is allowed"}
+            return {
+                **empty,
+                "error": f"UNSUPPORTED ACTION: file action {f.get('action')!r}; only 'write' is allowed",
+            }
     try:
         action = StepAction.model_validate(raw)
     except ValidationError as exc:
-        return {**empty, "error": f"INVALID OUTPUT FORMAT: {exc.errors(include_url=False)}"}
+        return {
+            **empty,
+            "error": f"INVALID OUTPUT FORMAT: {exc.errors(include_url=False)}",
+        }
     if not action.files and not action.commands:
-        return {**empty, "error": "INVALID OUTPUT FORMAT: no files or commands supplied"}
-    return {"files": [f.model_dump() for f in action.files], "commands": action.commands, "error": None}
+        return {
+            **empty,
+            "error": "INVALID OUTPUT FORMAT: no files or commands supplied",
+        }
+    return {
+        "files": [f.model_dump() for f in action.files],
+        "commands": action.commands,
+        "error": None,
+    }
 
 
 def _in_scope(rel_path: str, file_scope: list[str]) -> bool:
@@ -98,7 +117,12 @@ def execute_step(
     """Apply a parsed step action. Returns {success, stdout, stderr, files_written}."""
     allowed = set(allowed_tools)
     scope = file_scope or []
-    report: dict[str, Any] = {"success": True, "stdout": "", "stderr": "", "files_written": []}
+    report: dict[str, Any] = {
+        "success": True,
+        "stdout": "",
+        "stderr": "",
+        "files_written": [],
+    }
     out: list[str] = []
     files = payload.get("files", [])
     commands = payload.get("commands", [])
@@ -126,7 +150,9 @@ def execute_step(
             try:
                 ast.parse(code, filename=path)
             except SyntaxError as exc:
-                return fail(f"SyntaxError in generated {path} line {exc.lineno}: {exc.msg}")
+                return fail(
+                    f"SyntaxError in generated {path} line {exc.lineno}: {exc.msg}"
+                )
 
     snapshots: dict[str, str | None] = {}
     for f in files:
@@ -154,7 +180,10 @@ def execute_step(
 
     for f in files:
         res = registry.execute_tool(
-            "file_write", {"file_path": f["path"], "content": f["code"]}, workspace_dir, allowed=allowed
+            "file_write",
+            {"file_path": f["path"], "content": f["code"]},
+            workspace_dir,
+            allowed=allowed,
         )
         if not res.success:
             rollback()
@@ -163,7 +192,9 @@ def execute_step(
         report["files_written"].append(f["path"])
 
     for cmd in commands:
-        res = registry.execute_tool("terminal", {"command": cmd}, workspace_dir, allowed=allowed)
+        res = registry.execute_tool(
+            "terminal", {"command": cmd}, workspace_dir, allowed=allowed
+        )
         out.append(f"$ {cmd}\n{res.output}".rstrip())
         if not res.success:
             rollback()

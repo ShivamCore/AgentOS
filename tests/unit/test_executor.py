@@ -19,6 +19,7 @@ node_callback arity bug and silently-dropped failed futures):
 from __future__ import annotations
 
 import time
+
 from unittest.mock import MagicMock, patch
 
 from agent.lifecycle import NodeState, RunState
@@ -31,7 +32,9 @@ def _graph(n: int = 1, deps: dict[str, list[str]] | None = None) -> TaskGraph:
     g = TaskGraph(task_id="t")
     for i in range(n):
         sid = f"step_{i}"
-        g.nodes[sid] = StepNode(step_id=sid, description=f"Step {i}", dependencies=(deps or {}).get(sid, []))
+        g.nodes[sid] = StepNode(
+            step_id=sid, description=f"Step {i}", dependencies=(deps or {}).get(sid, [])
+        )
     return g
 
 
@@ -41,7 +44,9 @@ def _ok(node, ctx):
 
 def _orch(tmp_path, runner=_ok, **kw) -> DAGOrchestrator:
     kw.setdefault("max_workers", 1)
-    return DAGOrchestrator(workspace_dir=str(tmp_path), task_id="t", step_runner=runner, **kw)
+    return DAGOrchestrator(
+        workspace_dir=str(tmp_path), task_id="t", step_runner=runner, **kw
+    )
 
 
 class TestNodeCallbackSignature:
@@ -145,7 +150,11 @@ class TestFileCallback:
         def writer(node, ctx):
             return StepOutcome(True, files_written=["a.py"])
 
-        _orch(tmp_path, runner=writer, file_callback=lambda n, p, c: seen.append((n, p, c))).run_graph(_graph(1))
+        _orch(
+            tmp_path,
+            runner=writer,
+            file_callback=lambda n, p, c: seen.append((n, p, c)),
+        ).run_graph(_graph(1))
         assert seen == [("step_0", "a.py", "x = 1\n")]
 
 

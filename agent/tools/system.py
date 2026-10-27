@@ -4,7 +4,12 @@ from typing import ClassVar
 
 from pydantic import Field
 
-from ..sandbox import CommandRejectedError, SandboxUnavailableError, get_sandbox, parse_command
+from ..sandbox import (
+    CommandRejectedError,
+    SandboxUnavailableError,
+    get_sandbox,
+    parse_command,
+)
 from .base import Tool, ToolInput, ToolResult
 
 
@@ -16,8 +21,12 @@ class TerminalInput(ToolInput):
 
 class TerminalTool(Tool):
     name: ClassVar[str] = "terminal"
-    description: ClassVar[str] = "Run one allow-listed command (no shell) inside the Docker sandbox."
-    side_effects: ClassVar[str] = "may modify files under the task workspace; no network"
+    description: ClassVar[str] = (
+        "Run one allow-listed command (no shell) inside the Docker sandbox."
+    )
+    side_effects: ClassVar[str] = (
+        "may modify files under the task workspace; no network"
+    )
     input_schema = TerminalInput
 
     def execute(self, inputs: TerminalInput, workspace_dir: str) -> ToolResult:  # type: ignore[override]

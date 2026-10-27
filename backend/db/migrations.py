@@ -11,8 +11,12 @@ from __future__ import annotations
 
 import logging
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy import inspect, text
-from sqlalchemy.engine import Engine
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +44,9 @@ _ADDITIVE_COLUMNS: dict[str, list[tuple[str, str]]] = {
 
 
 def ensure_schema(engine: Engine) -> list[str]:
-    from backend.db.database import Base
     import backend.models.sql_models  # noqa: F401  (registers tables)
+
+    from backend.db.database import Base
 
     Base.metadata.create_all(bind=engine)
     added: list[str] = []

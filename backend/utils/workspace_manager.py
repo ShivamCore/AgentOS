@@ -21,11 +21,13 @@ Usage (in tasks.py):
     wm.archive(task_id)   # or wm.cleanup(task_id)
 """
 
+import contextlib
+import logging
 import os
 import shutil
 import tarfile
-import logging
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 
 from backend.config import settings
 
@@ -39,7 +41,7 @@ class WorkspaceManager:
     """
 
     def __init__(self) -> None:
-        self.root       = os.path.realpath(settings.WORKSPACE_DIR)
+        self.root = os.path.realpath(settings.WORKSPACE_DIR)
         self.archive_dir = os.path.join(self.root, "_archive")
         os.makedirs(self.root, exist_ok=True)
         os.makedirs(self.archive_dir, exist_ok=True)
@@ -76,7 +78,7 @@ class WorkspaceManager:
         if not os.path.exists(task_dir):
             return None
 
-        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
         archive_path = os.path.join(self.archive_dir, f"{task_id}_{ts}.tar.gz")
         try:
             with tarfile.open(archive_path, "w:gz") as tar:
@@ -97,10 +99,8 @@ class WorkspaceManager:
         total = 0
         for dirpath, _, filenames in os.walk(self.root):
             for fname in filenames:
-                try:
+                with contextlib.suppress(OSError):
                     total += os.path.getsize(os.path.join(dirpath, fname))
-                except OSError:
-                    pass
         return total
 
     def _enforce_disk_quota(self) -> None:

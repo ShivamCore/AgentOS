@@ -28,11 +28,18 @@ import concurrent.futures
 import logging
 import threading
 import time
+
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from agent.lifecycle import NODE_TERMINAL, InvalidTransition, NodeState, RunState, summarize_run
+from agent.lifecycle import (
+    NODE_TERMINAL,
+    InvalidTransitionError,
+    NodeState,
+    RunState,
+    summarize_run,
+)
 from agent.planner.graph import StepNode, TaskGraph
 
 logger = logging.getLogger(__name__)
@@ -51,9 +58,9 @@ class StepOutcome:
 
 @dataclass
 class StepContext:
-    attempt: int                    # 1-based
-    cancel_event: threading.Event   # set on node timeout, run timeout or cancellation
-    deadline: float                 # monotonic time by which the step must finish
+    attempt: int  # 1-based
+    cancel_event: threading.Event  # set on node timeout, run timeout or cancellation
+    deadline: float  # monotonic time by which the step must finish
     previous_error: str | None = None
 
 
@@ -96,7 +103,9 @@ class RunReport:
 class _Inflight:
     node: StepNode
     cancel: threading.Event
-    started: list[float]  # filled by the worker when it actually begins (READY -> RUNNING)
+    started: list[
+        float
+    ]  # filled by the worker when it actually begins (READY -> RUNNING)
 
 
 class DAGScheduler:
@@ -137,7 +146,7 @@ class DAGScheduler:
     def _move(self, node: StepNode, new: NodeState) -> bool:
         try:
             node.transition(new)
-        except InvalidTransition:
+        except InvalidTransitionError:
             return False
         self._emit(node, new)
         return True
@@ -168,10 +177,19 @@ class DAGScheduler:
         try:
             outcome = self.runner(node, ctx)
             if not isinstance(outcome, StepOutcome):
-                return StepOutcome(False, error=f"step runner returned malformed result: {type(outcome).__name__}")
+                return StepOutcome(
+                    False,
+                    error=f"step runner returned malformed result: {type(outcome).__name__}",
+                )
             return outcome
         except Exception as exc:
-            logger.error("node %s raised %s: %s", node.step_id, type(exc).__name__, exc, exc_info=True)
+            logger.error(
+                "node %s raised %s: %s",
+                node.step_id,
+                type(exc).__name__,
+                exc,
+                exc_info=True,
+            )
             return StepOutcome(False, error=f"{type(exc).__name__}: {exc}")
         finally:
             with self._events_lock:
@@ -179,17 +197,21 @@ class DAGScheduler:
 
     # ── main loop ──────────────────────────────────────────────────────────────
 
-    def run(self, graph: TaskGraph, cancel_event: threading.Event | None = None) -> RunReport:
+    def run(
+        self, graph: TaskGraph, cancel_event: threading.Event | None = None
+    ) -> RunReport:
         cfg = self.config
         cancel_event = cancel_event or threading.Event()
         start = self.clock()
         run_deadline = start + cfg.run_timeout_sec
-        inflight: dict[concurrent.futures.Future, _Inflight] = {}
-        abandoned: list[concurrent.futures.Future] = []
+        inflight: dict[concurrent.futures.Future[Any], _Inflight] = {}
+        abandoned: list[concurrent.futures.Future[Any]] = []
         retry_not_before: dict[str, float] = {}
         started_ids: set[str] = set()
         run_state: RunState | None = None
-        pool = concurrent.futures.ThreadPoolExecutor(max_workers=cfg.max_workers, thread_name_prefix="dag")
+        pool = concurrent.futures.ThreadPoolExecutor(
+            max_workers=cfg.max_workers, thread_name_prefix="dag"
+        )
 
         def finish_unstarted(state: NodeState, reason: str) -> None:
             for n in graph.nodes.values():
@@ -200,7 +222,9 @@ class DAGScheduler:
                     if self._move(n, state):
                         self._log(n.step_id, "error", reason)
 
-        def handle_done(fut: concurrent.futures.Future, it: _Inflight, allow_retry: bool) -> None:
+        def handle_done(
+            fut: concurrent.futures.Future[Any], it: _Inflight, allow_retry: bool
+        ) -> None:
             node = it.node
             outcome = fut.result()  # _worker never raises
             if outcome is None:  # cancelled while still queued
@@ -216,12 +240,19 @@ class DAGScheduler:
                 self._move(node, NodeState.COMPLETED)
                 return
             node.error = outcome.error or "step failed without an error message"
-            self._log(node.step_id, "error", f"attempt {node.attempts} failed: {node.error}")
+            self._log(
+                node.step_id, "error", f"attempt {node.attempts} failed: {node.error}"
+            )
             if allow_retry and outcome.retryable and node.attempts <= cfg.max_retries:
                 self._move(node, NodeState.READY)
                 retry_not_before[node.step_id] = self.clock()
             else:
-                logger.error("node %s failed after %d attempt(s): %s", node.step_id, node.attempts, node.error)
+                logger.error(
+                    "node %s failed after %d attempt(s): %s",
+                    node.step_id,
+                    node.attempts,
+                    node.error,
+                )
                 self._move(node, NodeState.FAILED)
                 self._block_dependents(graph, node.step_id)
 
@@ -234,7 +265,10 @@ class DAGScheduler:
                 if cancel_event.is_set():
                     run_state, stop_reason = RunState.CANCELLED, "run cancelled"
                 elif now >= run_deadline:
-                    run_state, stop_reason = RunState.TIMED_OUT, f"run exceeded {cfg.run_timeout_sec}s"
+                    run_state, stop_reason = (
+                        RunState.TIMED_OUT,
+                        f"run exceeded {cfg.run_timeout_sec}s",
+                    )
                 if stop_reason:
                     finish_unstarted(NodeState.CANCELLED, stop_reason)
                     for fut, it in list(inflight.items()):
@@ -243,9 +277,15 @@ class DAGScheduler:
                         if fut.done():
                             handle_done(fut, it, allow_retry=False)
                             continue
-                        final = NodeState.TIMED_OUT if run_state is RunState.TIMED_OUT else NodeState.CANCELLED
+                        final = (
+                            NodeState.TIMED_OUT
+                            if run_state is RunState.TIMED_OUT
+                            else NodeState.CANCELLED
+                        )
                         it.node.error = stop_reason
-                        if not self._move(it.node, final):  # still queued (READY): cannot time out
+                        if not self._move(
+                            it.node, final
+                        ):  # still queued (READY): cannot time out
                             self._move(it.node, NodeState.CANCELLED)
                         abandoned.append(fut)
                     break
@@ -257,9 +297,16 @@ class DAGScheduler:
                     dep_states = [graph.nodes[d].state for d in n.dependencies]
                     if all(s is NodeState.COMPLETED for s in dep_states):
                         self._move(n, NodeState.READY)
-                    elif any(s in NODE_TERMINAL and s is not NodeState.COMPLETED for s in dep_states):
-                        bad = next(d for d in n.dependencies if graph.nodes[d].state in NODE_TERMINAL
-                                   and graph.nodes[d].state is not NodeState.COMPLETED)
+                    elif any(
+                        s in NODE_TERMINAL and s is not NodeState.COMPLETED
+                        for s in dep_states
+                    ):
+                        bad = next(
+                            d
+                            for d in n.dependencies
+                            if graph.nodes[d].state in NODE_TERMINAL
+                            and graph.nodes[d].state is not NodeState.COMPLETED
+                        )
                         self._block_dependents(graph, bad)
 
                 # 3. dispatch READY nodes within the concurrency and step budgets
@@ -273,7 +320,9 @@ class DAGScheduler:
                         continue
                     if n.step_id not in started_ids:
                         if len(started_ids) >= cfg.max_steps:
-                            n.error = f"step budget exhausted (max_steps={cfg.max_steps})"
+                            n.error = (
+                                f"step budget exhausted (max_steps={cfg.max_steps})"
+                            )
                             if self._move(n, NodeState.CANCELLED):
                                 self._log(n.step_id, "error", n.error)
                                 self._block_dependents(graph, n.step_id)
@@ -295,13 +344,18 @@ class DAGScheduler:
                     if all(n.state in NODE_TERMINAL for n in graph.nodes.values()):
                         break
                     waiting_retry = any(
-                        n.state is NodeState.READY and retry_not_before.get(n.step_id, 0.0) > now
+                        n.state is NodeState.READY
+                        and retry_not_before.get(n.step_id, 0.0) > now
                         for n in graph.nodes.values()
                     )
-                    if not waiting_retry and not any(n.state is NodeState.READY for n in graph.nodes.values()):
+                    if not waiting_retry and not any(
+                        n.state is NodeState.READY for n in graph.nodes.values()
+                    ):
                         for n in graph.nodes.values():
                             if n.state not in NODE_TERMINAL:
-                                n.error = "scheduler deadlock: node can never become ready"
+                                n.error = (
+                                    "scheduler deadlock: node can never become ready"
+                                )
                                 logger.error("node %s: %s", n.step_id, n.error)
                                 self._move(n, NodeState.BLOCKED)
                         break
@@ -309,7 +363,9 @@ class DAGScheduler:
                 # 5. wait for progress, then handle node timeouts and outcomes
                 timeout = cfg.poll_interval_sec
                 done, _ = concurrent.futures.wait(
-                    list(inflight), timeout=timeout, return_when=concurrent.futures.FIRST_COMPLETED
+                    list(inflight),
+                    timeout=timeout,
+                    return_when=concurrent.futures.FIRST_COMPLETED,
                 )
                 now = self.clock()
                 for fut, it in list(inflight.items()):
@@ -317,7 +373,9 @@ class DAGScheduler:
                         continue
                     if now - it.started[0] > cfg.node_timeout_sec:
                         it.cancel.set()
-                        it.node.error = f"step exceeded node timeout of {cfg.node_timeout_sec}s"
+                        it.node.error = (
+                            f"step exceeded node timeout of {cfg.node_timeout_sec}s"
+                        )
                         if self._move(it.node, NodeState.TIMED_OUT):
                             self._log(it.node.step_id, "error", it.node.error)
                             self._block_dependents(graph, it.node.step_id)
@@ -325,9 +383,12 @@ class DAGScheduler:
                         del inflight[fut]
 
                 for fut in done:
-                    it = inflight.pop(fut, None)
-                    if it is not None:
-                        handle_done(fut, it, allow_retry=not cancel_event.is_set())
+                    if fut in inflight:
+                        handle_done(
+                            fut,
+                            inflight.pop(fut),
+                            allow_retry=not cancel_event.is_set(),
+                        )
         except BaseException:
             # e.g. Celery's SoftTimeLimitExceeded: signal running steps and do not block on them.
             for it in inflight.values():

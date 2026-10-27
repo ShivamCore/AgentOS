@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -23,7 +24,9 @@ from tests.conftest import seed_task
 
 # ── helpers ────────────────────────────────────────────────────────────────────────
 
-TASKS_MODULE_PATH = Path(__file__).parent.parent.parent / "backend" / "workers" / "tasks.py"
+TASKS_MODULE_PATH = (
+    Path(__file__).parent.parent.parent / "backend" / "workers" / "tasks.py"
+)
 
 
 def _get_tasks_source() -> str:
@@ -31,6 +34,7 @@ def _get_tasks_source() -> str:
 
 
 # ── Status string regression ───────────────────────────────────────────────────────
+
 
 class TestStatusStringRegression:
     """
@@ -48,10 +52,19 @@ class TestStatusStringRegression:
         bad_literals = []
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                if node.value.lower() in ("pending", "created", "running", "failed", "completed"):
-                    if node.value != node.value.upper():
-                        # lowercase version of a status word — suspicious
-                        bad_literals.append((node.lineno, node.value))
+                if (
+                    node.value.lower()
+                    in (
+                        "pending",
+                        "created",
+                        "running",
+                        "failed",
+                        "completed",
+                    )
+                    and node.value != node.value.upper()
+                ):
+                    # lowercase version of a status word — suspicious
+                    bad_literals.append((node.lineno, node.value))
 
         assert bad_literals == [], (
             "Found lowercase status literal(s) in tasks.py — use TaskStatus enum:\n"
@@ -67,28 +80,40 @@ class TestStatusStringRegression:
 
         # Simulate status update as the worker would do it
         from backend.models.sql_models import TaskStatus
+
         task.status = TaskStatus.CREATED
         db.commit()
         db.refresh(task)
 
-        assert task.status == "CREATED", \
+        assert task.status == "CREATED", (
             f"Retry path must set status to 'CREATED', got {task.status!r}"
-        assert task.status != "pending", "Regression: status must never be set to 'pending'"
+        )
+        assert task.status != "pending", (
+            "Regression: status must never be set to 'pending'"
+        )
 
     def test_TaskResult_model_is_pydantic(self):
         """TaskResult must be a Pydantic model, not a plain dict or dict subclass."""
         from pydantic import BaseModel
+
         from backend.workers.tasks import TaskResult
 
-        assert issubclass(TaskResult, BaseModel), \
+        assert issubclass(TaskResult, BaseModel), (
             "TaskResult must be a Pydantic BaseModel for schema validation"
+        )
 
     def test_TaskResult_has_required_fields(self):
         """TaskResult must expose: summary, steps_executed, files_modified, errors, next_steps."""
         from backend.workers.tasks import TaskResult
 
         fields = set(TaskResult.model_fields.keys())
-        required = {"summary", "steps_executed", "files_modified", "errors", "next_steps"}
+        required = {
+            "summary",
+            "steps_executed",
+            "files_modified",
+            "errors",
+            "next_steps",
+        }
         missing = required - fields
         assert not missing, f"TaskResult is missing fields: {missing}"
 
@@ -108,6 +133,7 @@ class TestStatusStringRegression:
 
 
 # ── Function decomposition ─────────────────────────────────────────────────────────
+
 
 class TestFunctionDecomposition:
     """Prove the 200-line monolith has been broken into focused functions."""
@@ -129,9 +155,8 @@ class TestFunctionDecomposition:
             except (OSError, TypeError):
                 pass
 
-        assert overlong == [], (
-            "Functions exceeding 100 lines:\n"
-            + "\n".join(f"  {n}: {l} lines" for n, l in overlong)
+        assert overlong == [], "Functions exceeding 100 lines:\n" + "\n".join(
+            f"  {n}: {count} lines" for n, count in overlong
         )
 
     def test_helper_functions_are_defined(self):
@@ -141,10 +166,13 @@ class TestFunctionDecomposition:
         funcs = {name for name, _ in inspect.getmembers(tasks_mod, inspect.isfunction)}
         # At least these helpers must be present
         assert "_db_log" in funcs or "db_log" in funcs, "Missing _db_log helper"
-        assert "_update_node" in funcs or "update_node" in funcs, "Missing _update_node helper"
+        assert "_update_node" in funcs or "update_node" in funcs, (
+            "Missing _update_node helper"
+        )
 
 
 # ── Error handling paths ───────────────────────────────────────────────────────────
+
 
 class TestErrorHandlingPaths:
     """Verify specific exception types are caught, not broad Exception."""
@@ -182,11 +210,13 @@ class TestErrorHandlingPaths:
         source = _get_tasks_source()
         # Check that db.close() appears inside a finally clause
         assert "finally" in source, "tasks.py must have a finally block for DB cleanup"
-        assert "db.close()" in source or ".close()" in source, \
+        assert "db.close()" in source or ".close()" in source, (
             "DB session must be explicitly closed in finally block"
+        )
 
 
 # ── Redis pub/sub ──────────────────────────────────────────────────────────────────
+
 
 class TestRedisBroadcast:
     def test_redis_failure_does_not_crash_task(self, db):
@@ -198,10 +228,13 @@ class TestRedisBroadcast:
 
         with patch("redis.from_url", side_effect=ConnectionError("Redis is down")):
             from backend.workers import tasks as tasks_mod
+
             try:
                 tasks_mod._publish_state(task.id)
             except ConnectionError:
-                pytest.fail("_publish_state must not propagate ConnectionError to caller")
+                pytest.fail(
+                    "_publish_state must not propagate ConnectionError to caller"
+                )
 
     def test_db_log_increments_seq_counter(self, db):
         """Each _db_log call for the same task_id must produce a unique, increasing seq_id."""
@@ -218,6 +251,7 @@ class TestRedisBroadcast:
 
             with patch("redis.from_url", return_value=MagicMock()):
                 from backend.workers import tasks as tasks_mod
+
                 tasks_mod._seq_counters.clear()
 
                 tasks_mod._db_log(task.id, "n1", "action", "msg 1")
@@ -226,10 +260,12 @@ class TestRedisBroadcast:
 
         # seq counter for this task must have reached 3
         from backend.workers.tasks import _seq_counters
+
         assert _seq_counters.get(task.id, 0) == 3
 
 
 # ── Worker startup ─────────────────────────────────────────────────────────────────
+
 
 class TestWorkerStartupReset:
     def test_stale_running_tasks_reset_on_startup(self, db):
@@ -248,10 +284,12 @@ class TestWorkerStartupReset:
             mock_session_cls.return_value = mock_session
 
             from backend.workers.tasks import _reset_stale_on_startup
+
             _reset_stale_on_startup(sender=None)
 
         # Verify reset happened on the real db
         from backend.models.sql_models import TaskRecord
+
         db.expire_all()
         a = db.query(TaskRecord).filter(TaskRecord.id == task_a.id).first()
         c = db.query(TaskRecord).filter(TaskRecord.id == task_c.id).first()

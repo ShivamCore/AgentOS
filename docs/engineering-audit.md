@@ -45,6 +45,7 @@ Scope: the Python system (`agent/`, `backend/`, `cli/`, `tests/`, `scripts/`, CI
 | 2 | Silent host execution. `get_sandbox()` fell back to `subprocess` with only a timeout. The executor's "semantic validation" ran `pytest`/`python` on generated files directly on the host. The legacy orchestrator ran generated code on the host. | Fail-closed `get_sandbox()`; explicit, labelled `UnsafeHostExecutor` opt-in; no other subprocess path ([ADR 0001](decisions/0001-fail-closed-sandbox.md)) |
 | 3 | Failure "rollback" ran `kill -9` on any process listening on 8000/3000/5000/8080, which includes the AgentOS API itself | Removed |
 | 4 | `POST /system/start|stop` spawned and killed host processes without authentication. `/agents/save` and `/agents/{name}/content` took unvalidated names, so `.md` files could be written and read outside `agents/`. | 403 unless `AGENTOS_ENABLE_PROCESS_CONTROL=1`; agent names validated; optional `API_KEY` on mutating endpoints |
+| 4b | `WS /ws/terminal` executed any received text with `create_subprocess_shell` on the host, with no authentication. `start.sh` bound the API to `0.0.0.0`, so anyone on the network could run commands. (Found while fixing CI on PR #1.) | Refused unless `AGENTOS_ENABLE_WEB_TERMINAL=1` + loopback client + API key when configured; localhost bind by default; `tests/security/test_web_terminal.py` |
 | 5 | Unsupported performance claims: a deepseek-coder 6.7b row with no measurement behind it, a cold-vs-warm comparison, a model swap labelled as quantization, "zero quality regression" | Claims removed; the old report archived with a warning; new reproducible harness ([benchmarking.md](benchmarking.md)) |
 
 ### P1: reliability and contracts
@@ -72,7 +73,8 @@ Scope: the Python system (`agent/`, `backend/`, `cli/`, `tests/`, `scripts/`, CI
 | 19 | CI: `pip install … \|\| true` hid install failures; a 90% coverage gate that was never met; security and E2E suites not run | Install failures fail the build; combined suite gate at 75% (measured) |
 | 20 | README: "Sandboxes everything", "hard limits", "`ulimit` fallback" (no `ulimit` existed), `agentos demo --watch` (no such option), automatic memory recall (ChromaDB, which downloads an embedding model on first use) | README rewritten from verified behaviour |
 | 21 | `SECURITY.md` with placeholder e-mail, PGP key and response SLAs | Replaced with a pointer to `docs/security.md` |
-| 22 | Dependency advisories | chromadb made optional (server-mode advisories; embedded use only); pytest 8.4.2 advisory **unresolved** (dev-only; the fix needs pytest 9 + pytest-asyncio upgrade) |
+| 22 | Dependency advisories | chromadb made optional (server-mode advisories; embedded use only); pytest 9.0.3 (+ pytest-asyncio 1.x, pytest-cov 7, pytest-benchmark 5); frontend `next` 16.4.3 and `dompurify` override → `npm audit` clean |
+| 23 | CI lint/type gates had never passed on `main` (ruff: 910 findings, `mypy --strict`: 121 errors), so every test job was skipped | Code formatted (ruff + black), findings fixed; E501 (formatter-owned) and PTH (style) ignored in config; SQLAlchemy models moved to typed `Mapped[...]`; `mypy --strict` clean; Trivy action pinned to an existing tag |
 
 ## 5. Real end-to-end run (2026-10-27)
 
@@ -94,4 +96,4 @@ This is one anecdotal run, not a success-rate measurement.
 4. No end-to-end success-rate benchmark over a task set; no output-quality evaluation.
 5. Untested: PostgreSQL, multi-worker deployments, and Redis outages in the middle of a run.
 6. 75% line coverage; `agent/utils/inference_cache.py`, `batch_infer.py` and the WebSocket router are largely untested.
-7. Style-level ruff findings in untouched CLI modules (`B904`, `S110`).
+7. `npm run lint` reports 2 warnings in UI components (not part of CI).

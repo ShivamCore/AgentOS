@@ -10,8 +10,9 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Any
 
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 try:
     import chromadb
+
     _CHROMA_AVAILABLE = True
 except ImportError:
     _CHROMA_AVAILABLE = False
@@ -89,7 +91,7 @@ class LocalMemoryEngine:
         meta: dict[str, Any] = {
             "agent_id": agent_id,
             "type": mem_type,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         if extra_metadata:
@@ -134,16 +136,16 @@ class LocalMemoryEngine:
                 where=where or None,
             )
 
-            docs = results.get("documents", [[]])[0]
-            ids = results.get("ids", [[]])[0]
-            metas = results.get("metadatas", [[]])[0]
-            dists = results.get("distances", [[]])[0]
+            docs = (results.get("documents") or [[]])[0]
+            ids = (results.get("ids") or [[]])[0]
+            metas = (results.get("metadatas") or [[]])[0]
+            dists = (results.get("distances") or [[]])[0]
 
             return [
                 MemoryResult(
                     id=ids[i],
                     document=docs[i],
-                    metadata=metas[i],
+                    metadata=dict(metas[i]),
                     distance=dists[i] if dists else 0.0,
                 )
                 for i in range(len(docs))
@@ -156,6 +158,7 @@ class LocalMemoryEngine:
 # ── Module-level factory ────────────────────────────────────────────────────────
 # LRU-cached so each unique workspace_dir gets exactly one engine instance.
 # Safe for multi-threaded use: lru_cache is thread-safe in CPython.
+
 
 @lru_cache(maxsize=8)
 def get_memory_engine(workspace_dir: str) -> LocalMemoryEngine:

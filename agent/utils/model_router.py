@@ -21,6 +21,7 @@ import logging
 import os
 import threading
 import time
+
 from dataclasses import dataclass, field
 
 import requests
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 # The router picks the first name that is actually available in Ollama.
 # Add custom model tags here.
 
-_TIER_ACCURACY = [          # planning — needs coherent multi-step reasoning
+_TIER_ACCURACY = [  # planning — needs coherent multi-step reasoning
     "llama3.1:8b",
     "deepseek-coder:6.7b",
     "llama3.2:latest",
@@ -40,14 +41,14 @@ _TIER_ACCURACY = [          # planning — needs coherent multi-step reasoning
     "qwen2.5:3b",
 ]
 
-_TIER_SPEED = [             # execution — needs fast JSON output, low latency
+_TIER_SPEED = [  # execution — needs fast JSON output, low latency
     "deepseek-coder:1.3b",
     "qwen2.5-coder:1.5b-base",
     "deepseek-coder:6.7b",
     "llama3.2:3b",
 ]
 
-_TIER_BALANCED = [          # debugging — needs reasoning + speed
+_TIER_BALANCED = [  # debugging — needs reasoning + speed
     "deepseek-coder:6.7b",
     "llama3.2:3b",
     "qwen2.5:3b",
@@ -56,22 +57,22 @@ _TIER_BALANCED = [          # debugging — needs reasoning + speed
 
 # task_type → tier list
 _TASK_TIER_MAP: dict[str, list[str]] = {
-    "plan":    _TIER_ACCURACY,
-    "code":    _TIER_SPEED,
-    "debug":   _TIER_BALANCED,
+    "plan": _TIER_ACCURACY,
+    "code": _TIER_SPEED,
+    "debug": _TIER_BALANCED,
     # fallback for unknown types
     "default": _TIER_BALANCED,
 }
 
 # Quantization quality scores (higher = better quality, lower = faster)
 _QUANT_SCORE: dict[str, int] = {
-    "F16":    100,
-    "Q8_0":    80,
-    "Q5_K_M":  60,
-    "Q4_K_M":  50,
-    "Q4_0":    40,
-    "Q3_K_M":  30,
-    "Q2_K":    20,
+    "F16": 100,
+    "Q8_0": 80,
+    "Q5_K_M": 60,
+    "Q4_K_M": 50,
+    "Q4_0": 40,
+    "Q3_K_M": 30,
+    "Q2_K": 20,
 }
 
 
@@ -124,7 +125,9 @@ class ModelRouter:
         self._available: list[ModelInfo] = []
         self._available_names: set[str] = set()
         self._cache_ts: float = 0.0
-        self._default_model = os.getenv("OLLAMA_MODEL", os.getenv("DEV_MODE_MODEL", "deepseek-coder:1.3b"))
+        self._default_model = os.getenv(
+            "OLLAMA_MODEL", os.getenv("DEV_MODE_MODEL", "deepseek-coder:1.3b")
+        )
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -170,9 +173,8 @@ class ModelRouter:
         for candidate in tier_list:
             if candidate in available:
                 tier_label = self._tier_label(effective_type)
-                reason = (
-                    f"{task_type} task → {tier_label} tier"
-                    + (f" (retry {attempt}, downgraded)" if attempt >= 2 else "")
+                reason = f"{task_type} task → {tier_label} tier" + (
+                    f" (retry {attempt}, downgraded)" if attempt >= 2 else ""
                 )
                 return RoutingDecision(
                     model=candidate,
@@ -229,7 +231,9 @@ class ModelRouter:
 
     @staticmethod
     def _tier_label(task_type: str) -> str:
-        return {"plan": "accuracy", "code": "speed", "debug": "balanced"}.get(task_type, "balanced")
+        return {"plan": "accuracy", "code": "speed", "debug": "balanced"}.get(
+            task_type, "balanced"
+        )
 
     def _get_available_names(self) -> set[str]:
         self._refresh_if_stale()
@@ -250,12 +254,14 @@ class ModelRouter:
             infos: list[ModelInfo] = []
             for m in raw_models:
                 details = m.get("details", {})
-                infos.append(ModelInfo(
-                    name=m["name"],
-                    family=details.get("family", "unknown"),
-                    quantization=details.get("quantization_level", "unknown"),
-                    size_gb=round(m.get("size", 0) / 1e9, 2),
-                ))
+                infos.append(
+                    ModelInfo(
+                        name=m["name"],
+                        family=details.get("family", "unknown"),
+                        quantization=details.get("quantization_level", "unknown"),
+                        size_gb=round(m.get("size", 0) / 1e9, 2),
+                    )
+                )
             self._available = infos
             self._available_names = {m.name for m in infos}
             self._cache_ts = time.time()

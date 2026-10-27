@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -63,7 +64,9 @@ class TestFailClosed:
         assert not os.path.exists(marker), "command must not have executed on the host"
 
     def test_unsafe_mode_requires_explicit_flag(self, ws, no_docker, monkeypatch):
-        monkeypatch.setenv(sb.UNSAFE_ENV_FLAG, "true")  # only the literal "1" enables it
+        monkeypatch.setenv(
+            sb.UNSAFE_ENV_FLAG, "true"
+        )  # only the literal "1" enables it
         with pytest.raises(SandboxUnavailableError):
             get_sandbox(ws)
         monkeypatch.setenv(sb.UNSAFE_ENV_FLAG, "1")
@@ -71,10 +74,21 @@ class TestFailClosed:
 
 
 class TestCommandPolicy:
-    @pytest.mark.parametrize("cmd", [
-        "", "   ", "rm -rf /", "bash -c 'id'", "sh -c id", "curl http://x", "docker ps",
-        "python 'unterminated", "echo hi\x00", "/bin/sh",
-    ])
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "",
+            "   ",
+            "rm -rf /",
+            "bash -c 'id'",
+            "sh -c id",
+            "curl http://x",
+            "docker ps",
+            "python 'unterminated",
+            "echo hi\x00",
+            "/bin/sh",
+        ],
+    )
     def test_rejected(self, cmd):
         with pytest.raises(CommandRejectedError):
             parse_command(cmd)
@@ -85,7 +99,11 @@ class TestCommandPolicy:
         assert parse_command("python -c 'print(1)'") == ["python", "-c", "print(1)"]
 
     def test_planner_cannot_override_limits(self, ws):
-        res = registry.execute_tool("terminal", {"command": "echo hi", "timeout_sec": 99999, "network": True}, ws)
+        res = registry.execute_tool(
+            "terminal",
+            {"command": "echo hi", "timeout_sec": 99999, "network": True},
+            ws,
+        )
         assert not res.success and "invalid arguments" in res.error
 
     def test_policy_network_cannot_be_enabled(self, monkeypatch):
@@ -127,7 +145,11 @@ class TestDockerIsolationSettings:
         assert list(kw["volumes"]) == [os.path.realpath(ws)]
         assert all("docker.sock" not in k for k in kw["volumes"])
         assert "SUPER_SECRET_TOKEN" not in kw["environment"]
-        assert set(kw["environment"]) == {"HOME", "PYTHONDONTWRITEBYTECODE", "PYTHONUNBUFFERED"}
+        assert set(kw["environment"]) == {
+            "HOME",
+            "PYTHONDONTWRITEBYTECODE",
+            "PYTHONUNBUFFERED",
+        }
 
     def test_missing_image_fails_closed(self, ws, monkeypatch):
         monkeypatch.delenv("AGENTOS_SANDBOX_PULL", raising=False)
@@ -152,7 +174,9 @@ class TestDockerIsolationSettings:
         box, client = self.make(ws, max_output_bytes=100)
         container = client.containers.create.return_value
         container.wait.return_value = {"StatusCode": 137}
-        container.logs.side_effect = lambda stdout, stderr: (b"x" * 10_000) if stdout else b""
+        container.logs.side_effect = lambda stdout, stderr: (
+            (b"x" * 10_000) if stdout else b""
+        )
         container.attrs = {"State": {"OOMKilled": True}}
         res = box.run(["python", "big.py"])
         assert res.truncated and len(res.stdout) < 200
@@ -191,7 +215,9 @@ class TestUnsafeHostExecutor:
             os.kill(child, 0)
 
     def test_output_capped(self, ws):
-        ex = UnsafeHostExecutor(ws, SandboxPolicy(max_output_bytes=1000, timeout_sec=20))
+        ex = UnsafeHostExecutor(
+            ws, SandboxPolicy(max_output_bytes=1000, timeout_sec=20)
+        )
         res = ex.run(["python", "-c", "print('y' * 5_000_000)"])
         assert res.success and res.truncated
         assert len(res.stdout) < 1100
@@ -203,7 +229,9 @@ class TestUnsafeHostExecutor:
         assert "AWS_SECRET_ACCESS_KEY" not in res.stdout
         assert "do-not-leak" not in res.stdout
 
-    @pytest.mark.skipif(sys.platform != "linux", reason="RLIMIT_AS is only enforced on Linux")
+    @pytest.mark.skipif(
+        sys.platform != "linux", reason="RLIMIT_AS is only enforced on Linux"
+    )
     def test_memory_rlimit_linux(self, ws):
         ex = UnsafeHostExecutor(ws, SandboxPolicy(memory_mb=200, timeout_sec=20))
         res = ex.run(["python", "-c", "x = bytearray(1024 * 1024 * 1024)"])
@@ -221,7 +249,9 @@ def _docker_ready() -> bool:
         return False
 
 
-docker_only = pytest.mark.skipif(not _docker_ready(), reason="Docker daemon or agentos-sandbox image unavailable")
+docker_only = pytest.mark.skipif(
+    not _docker_ready(), reason="Docker daemon or agentos-sandbox image unavailable"
+)
 
 
 @pytest.mark.docker
@@ -233,15 +263,23 @@ class TestRealDockerEnforcement:
         return DockerSandbox(ws, SandboxPolicy(**policy)).run(["python", "t.py"])
 
     def test_network_blocked(self, ws):
-        r = self.run_py(ws, "import socket; socket.create_connection(('1.1.1.1', 53), timeout=3)", timeout_sec=20)
+        r = self.run_py(
+            ws,
+            "import socket; socket.create_connection(('1.1.1.1', 53), timeout=3)",
+            timeout_sec=20,
+        )
         assert not r.success
 
     def test_memory_bounded(self, ws):
-        r = self.run_py(ws, "x = bytearray(1024 * 1024 * 1024)", memory_mb=128, timeout_sec=30)
+        r = self.run_py(
+            ws, "x = bytearray(1024 * 1024 * 1024)", memory_mb=128, timeout_sec=30
+        )
         assert not r.success
 
     def test_fork_bomb_bounded(self, ws):
-        r = self.run_py(ws, "import os\nwhile True:\n    os.fork()", pids_limit=32, timeout_sec=10)
+        r = self.run_py(
+            ws, "import os\nwhile True:\n    os.fork()", pids_limit=32, timeout_sec=10
+        )
         assert not r.success
 
     def test_infinite_loop_terminated(self, ws):
@@ -251,5 +289,9 @@ class TestRealDockerEnforcement:
 
     def test_root_fs_read_only_and_no_host_env(self, ws, monkeypatch):
         monkeypatch.setenv("HOST_SECRET", "nope")
-        r = self.run_py(ws, "import os\nprint(os.environ.get('HOST_SECRET'))\nopen('/etc/x', 'w')", timeout_sec=20)
+        r = self.run_py(
+            ws,
+            "import os\nprint(os.environ.get('HOST_SECRET'))\nopen('/etc/x', 'w')",
+            timeout_sec=20,
+        )
         assert not r.success and "nope" not in r.stdout

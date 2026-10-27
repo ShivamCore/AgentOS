@@ -15,6 +15,8 @@ pytest -q                                   # everything that can run here
 pytest tests/e2e -v                         # deterministic end-to-end
 pytest tests/security -v -rs                # sandbox + injection; shows why Docker tests skipped
 pytest --cov=agent --cov=backend -q         # coverage (CI floor: 75%)
+ruff check . && ruff format --check . && black --check backend/ agent/
+mypy backend/ agent/ --strict --ignore-missing-imports
 make sandbox-image && pytest -m docker -v   # real-container enforcement (needs Docker)
 AGENTOS_TEST_OLLAMA_MODEL=phi3.5 pytest -m ollama -v -rxs   # live inference (needs Ollama + model)
 ```
@@ -23,17 +25,17 @@ AGENTOS_TEST_OLLAMA_MODEL=phi3.5 pytest -m ollama -v -rxs   # live inference (ne
 
 | Suite | Result |
 |---|---|
-| `tests/unit` | 178 passed |
+| `tests/unit` | 184 passed (1 skipped without chromadb) |
 | `tests/integration` | 12 passed, 3 skipped (live Ollama, opt-in) |
 | `tests/contract` | 16 passed |
 | `tests/regression` | 11 passed |
-| `tests/security` | 37 passed, 6 skipped (5 need Docker, 1 Linux-only rlimit) |
+| `tests/security` | 42 passed, 6 skipped (5 need Docker, 1 Linux-only rlimit) |
 | `tests/e2e` | 15 passed |
 | `tests/perf` | 7 passed |
-| **Total** `pytest -q` | **276 passed, 9 skipped**, run 3× with identical results |
-| Clean venv from `requirements.txt` | 275 passed, 10 skipped (chromadb test skips because chromadb is now optional) |
+| **Total** `pytest -q` | **288 passed, 9 skipped** (dev venv with chromadb) |
+| Clean venv from `requirements.txt` (pytest 9.0.3, as in CI) | 287 passed, 10 skipped (chromadb test skips; chromadb is optional) |
 | `AGENTOS_TEST_OLLAMA_MODEL=phi3.5 pytest -m ollama` | 3 passed |
-| Coverage (`agent` + `backend`) | 75% |
+| Coverage (`agent` + `backend`, line + branch) | 76.75% (CI gate 75%) |
 
 Skipped and never run here: `TestRealDockerEnforcement` (network block, memory limit, PID limit, read-only root FS, infinite-loop kill in a real container). Docker is not installed on the audit machine. These are the only sandbox properties not demonstrated end to end.
 

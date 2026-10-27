@@ -19,4 +19,7 @@ def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
     if not expected:
         return
     if not x_api_key or not hmac.compare_digest(x_api_key, expected):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing or invalid X-API-Key")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="missing or invalid X-API-Key",
+        )

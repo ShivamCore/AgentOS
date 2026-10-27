@@ -24,12 +24,13 @@ import platform
 import statistics
 import sys
 import time
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agent.planner.graph import StepNode, TaskGraph  # noqa: E402
-from agent.planner.scheduler import DAGScheduler, SchedulerConfig, StepOutcome  # noqa: E402
+from agent.planner.graph import StepNode, TaskGraph
+from agent.planner.scheduler import DAGScheduler, SchedulerConfig, StepOutcome
 
 
 def build(shape: str, n: int) -> tuple[TaskGraph, int]:
@@ -39,14 +40,18 @@ def build(shape: str, n: int) -> tuple[TaskGraph, int]:
         edges = {f"n{i}": [] for i in range(n)}
         depth = 1
     elif shape == "chain":
-        edges = {f"n{i}": ([f"n{i-1}"] if i else []) for i in range(n)}
+        edges = {f"n{i}": ([f"n{i - 1}"] if i else []) for i in range(n)}
         depth = n
-    elif shape == "layered":  # 4 layers, each node depends on every node of the previous layer
+    elif (
+        shape == "layered"
+    ):  # 4 layers, each node depends on every node of the previous layer
         width = max(1, n // 4)
         edges = {}
         for layer in range(4):
             for j in range(width):
-                edges[f"l{layer}_{j}"] = [f"l{layer-1}_{k}" for k in range(width)] if layer else []
+                edges[f"l{layer}_{j}"] = (
+                    [f"l{layer - 1}_{k}" for k in range(width)] if layer else []
+                )
         depth = 4
     else:
         raise ValueError(shape)
@@ -55,7 +60,9 @@ def build(shape: str, n: int) -> tuple[TaskGraph, int]:
     return g, depth
 
 
-def run_once(shape: str, n: int, workers: int, step_s: float, fail_root: bool = False) -> dict:
+def run_once(
+    shape: str, n: int, workers: int, step_s: float, fail_root: bool = False
+) -> dict:
     g, depth = build(shape, n)
     first = next(iter(g.nodes))
 
@@ -65,25 +72,42 @@ def run_once(shape: str, n: int, workers: int, step_s: float, fail_root: bool = 
             return StepOutcome(False, error="injected failure")
         return StepOutcome(True)
 
-    sched = DAGScheduler(step, SchedulerConfig(max_workers=workers, max_retries=1, poll_interval_sec=0.005))
+    sched = DAGScheduler(
+        step,
+        SchedulerConfig(max_workers=workers, max_retries=1, poll_interval_sec=0.005),
+    )
     t0 = time.perf_counter()
     rep = sched.run(g)
     wall = time.perf_counter() - t0
     import math
 
     waves = depth if shape != "wide" else 1
-    per_wave = max(1, math.ceil(len(g.nodes) / waves / workers)) if shape != "chain" else 1
+    per_wave = (
+        max(1, math.ceil(len(g.nodes) / waves / workers)) if shape != "chain" else 1
+    )
     ideal = waves * per_wave * step_s + (step_s if fail_root else 0.0)
     done = sum(1 for s in rep.node_states.values() if s == "COMPLETED")
-    return {"wall_s": wall, "ideal_s": ideal, "overhead_s": wall - ideal, "completed": done,
-            "nodes": len(g.nodes), "max_concurrency": rep.max_observed_concurrency, "state": rep.state.value}
+    return {
+        "wall_s": wall,
+        "ideal_s": ideal,
+        "overhead_s": wall - ideal,
+        "completed": done,
+        "nodes": len(g.nodes),
+        "max_concurrency": rep.max_observed_concurrency,
+        "state": rep.state.value,
+    }
 
 
 def summarize(xs: list[float]) -> dict:
     xs = sorted(xs)
-    p95 = xs[min(len(xs) - 1, int(round(0.95 * (len(xs) - 1))))]
-    return {"median": statistics.median(xs), "min": xs[0], "max": xs[-1], "p95": p95,
-            "stdev": statistics.stdev(xs) if len(xs) > 1 else 0.0}
+    p95 = xs[min(len(xs) - 1, round(0.95 * (len(xs) - 1)))]
+    return {
+        "median": statistics.median(xs),
+        "min": xs[0],
+        "max": xs[-1],
+        "p95": p95,
+        "stdev": statistics.stdev(xs) if len(xs) > 1 else 0.0,
+    }
 
 
 def main() -> None:
@@ -105,38 +129,67 @@ def main() -> None:
             walls = [r["wall_s"] for r in runs]
             med = statistics.median(walls)
             base = base or med
-            rows.append({
-                "workload": shape, "nodes": runs[0]["nodes"], "max_workers": w,
-                "wall_s": summarize(walls), "ideal_s": runs[0]["ideal_s"],
-                "overhead_s": summarize([r["overhead_s"] for r in runs]),
-                "speedup_vs_1_worker": base / med,
-                "completion_rate": statistics.mean(r["completed"] / r["nodes"] for r in runs),
-                "max_observed_concurrency": max(r["max_concurrency"] for r in runs),
-                "raw": runs,
-            })
-    fail_runs = [run_once("wide", args.nodes, 4, step_s, fail_root=True) for _ in range(args.reps)]
+            rows.append(
+                {
+                    "workload": shape,
+                    "nodes": runs[0]["nodes"],
+                    "max_workers": w,
+                    "wall_s": summarize(walls),
+                    "ideal_s": runs[0]["ideal_s"],
+                    "overhead_s": summarize([r["overhead_s"] for r in runs]),
+                    "speedup_vs_1_worker": base / med,
+                    "completion_rate": statistics.mean(
+                        r["completed"] / r["nodes"] for r in runs
+                    ),
+                    "max_observed_concurrency": max(r["max_concurrency"] for r in runs),
+                    "raw": runs,
+                }
+            )
+    fail_runs = [
+        run_once("wide", args.nodes, 4, step_s, fail_root=True)
+        for _ in range(args.reps)
+    ]
     ok_runs = [run_once("wide", args.nodes, 4, step_s) for _ in range(args.reps)]
     failure = {
-        "workload": "wide, 1 root fails once then succeeds on retry", "max_workers": 4,
+        "workload": "wide, 1 root fails once then succeeds on retry",
+        "max_workers": 4,
         "wall_s_with_retry": summarize([r["wall_s"] for r in fail_runs]),
         "wall_s_without_failure": summarize([r["wall_s"] for r in ok_runs]),
-        "completion_rate": statistics.mean(r["completed"] / r["nodes"] for r in fail_runs),
+        "completion_rate": statistics.mean(
+            r["completed"] / r["nodes"] for r in fail_runs
+        ),
         "raw": fail_runs,
     }
     result = {
         "benchmark": "dag_scheduler",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "environment": {"python": sys.version.split()[0], "platform": platform.platform(),
-                        "machine": platform.machine(), "cpu_count": os.cpu_count()},
-        "config": {"reps": args.reps, "nodes": args.nodes, "step_ms": args.step_ms, "workers": workers},
-        "results": rows, "failure_handling": failure,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "environment": {
+            "python": sys.version.split()[0],
+            "platform": platform.platform(),
+            "machine": platform.machine(),
+            "cpu_count": os.cpu_count(),
+        },
+        "config": {
+            "reps": args.reps,
+            "nodes": args.nodes,
+            "step_ms": args.step_ms,
+            "workers": workers,
+        },
+        "results": rows,
+        "failure_handling": failure,
     }
-    print(f"{'workload':10} {'workers':>7} {'median s':>9} {'ideal s':>8} {'ovh ms':>7} {'speedup':>8} {'conc':>5}")
+    print(
+        f"{'workload':10} {'workers':>7} {'median s':>9} {'ideal s':>8} {'ovh ms':>7} {'speedup':>8} {'conc':>5}"
+    )
     for r in rows:
-        print(f"{r['workload']:10} {r['max_workers']:>7} {r['wall_s']['median']:>9.3f} {r['ideal_s']:>8.3f} "
-              f"{r['overhead_s']['median'] * 1000:>7.1f} {r['speedup_vs_1_worker']:>8.2f} {r['max_observed_concurrency']:>5}")
-    print(f"failure+retry median {failure['wall_s_with_retry']['median']:.3f}s vs "
-          f"{failure['wall_s_without_failure']['median']:.3f}s without; completion {failure['completion_rate']:.0%}")
+        print(
+            f"{r['workload']:10} {r['max_workers']:>7} {r['wall_s']['median']:>9.3f} {r['ideal_s']:>8.3f} "
+            f"{r['overhead_s']['median'] * 1000:>7.1f} {r['speedup_vs_1_worker']:>8.2f} {r['max_observed_concurrency']:>5}"
+        )
+    print(
+        f"failure+retry median {failure['wall_s_with_retry']['median']:.3f}s vs "
+        f"{failure['wall_s_without_failure']['median']:.3f}s without; completion {failure['completion_rate']:.0%}"
+    )
     if args.out:
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
         with open(args.out, "w") as f:
