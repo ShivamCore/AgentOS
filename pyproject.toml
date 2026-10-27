@@ -209,7 +209,8 @@ omit = [
 ]
 
 [tool.coverage.report]
-fail_under = 90
+# No global fail_under: per-suite CI jobs (unit, integration) only report coverage.
+# The threshold is enforced once, on the combined suite (CI coverage-gate, `make test`).
 show_missing = true
 skip_covered = false
 exclude_lines = [

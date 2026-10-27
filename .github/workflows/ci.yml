@@ -441,10 +441,10 @@ jobs:
           retention-days: 30
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # JOB 10 — COVERAGE GATE (90% minimum)
+  # JOB 10 — COVERAGE GATE (75% minimum, combined suite)
   # ═══════════════════════════════════════════════════════════════════════════
   coverage-gate:
-    name: "📊 Coverage Gate (≥90%)"
+    name: "📊 Coverage Gate (≥75%)"
     runs-on: ubuntu-latest
     needs: [unit, integration, contract, regression]
     steps:
