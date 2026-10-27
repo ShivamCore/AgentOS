@@ -71,7 +71,7 @@ logs/
 dump.rdb
 
 # ── Docker ────────────────────────────────────────────────────────────────────
-.dockerignore
+# .dockerignore is committed: it keeps .env and .git out of image build contexts.
 
 # ── Node / Frontend ───────────────────────────────────────────────────────────
 node_modules/

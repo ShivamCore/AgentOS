@@ -35,8 +35,8 @@ ARG VCS_REF="unknown"
 ARG VERSION="dev"
 
 LABEL org.opencontainers.image.title="AgentOS" \
-      org.opencontainers.image.description="Local-first autonomous AI coding agent" \
-      org.opencontainers.image.source="https://github.com/youruser/agentos" \
+      org.opencontainers.image.description="Local-first LLM agent runner with a validated DAG scheduler" \
+      org.opencontainers.image.source="https://github.com/ShivamCore/AgentOS" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.version="${VERSION}" \
@@ -66,7 +66,7 @@ WORKDIR /app
 COPY backend/ ./backend/
 COPY agent/ ./agent/
 COPY agents/ ./agents/
-COPY main.py .
+COPY db_migrate.py .
 COPY start.sh .
 
 # Ensure start.sh is executable

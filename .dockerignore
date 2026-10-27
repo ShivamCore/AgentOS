@@ -1,0 +1,27 @@
+# Keep secrets, VCS data and local artifacts out of every build context.
+.git
+.github
+.env
+.env.*
+!.env.example
+.venv
+venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+reports
+workspace
+*.db
+*.db-wal
+*.db-shm
+.attic
+**/node_modules
+frontend/.next
+benchmarks/results
+pytest-of-*
+._*
+.DS_Store
