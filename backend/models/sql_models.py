@@ -7,29 +7,17 @@ Indexes on hot query paths (status, created_at) for efficient list/filter querie
 
 from __future__ import annotations
 
-import enum
-
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
+from agent.lifecycle import NodeState, RunState
 from backend.db.database import Base
 
 
-class TaskStatus(str, enum.Enum):
-    CREATED = "CREATED"
-    PLANNED = "PLANNED"
-    RUNNING = "RUNNING"
-    PARTIAL_SUCCESS = "PARTIAL_SUCCESS"
-    FAILED = "FAILED"
-    COMPLETED = "COMPLETED"
-
-
-class NodeStatus(str, enum.Enum):
-    CREATED = "CREATED"
-    RUNNING = "RUNNING"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
+# The lifecycle enums live in agent.lifecycle (single source of truth).
+TaskStatus = RunState
+NodeStatus = NodeState
 
 
 class TaskRecord(Base):
@@ -38,12 +26,15 @@ class TaskRecord(Base):
     id = Column(String, primary_key=True, index=True)
     idempotency_key = Column(String, unique=True, index=True, nullable=True)
     description = Column(Text, nullable=False)
-    status = Column(String, default=TaskStatus.CREATED, nullable=False, index=True)
+    status = Column(String, default=RunState.CREATED.value, nullable=False, index=True)
     task_input_json = Column(Text, nullable=True)
     constraints_json = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    cancel_requested = Column(Boolean, default=False, nullable=False, server_default="0")
+    error = Column(Text, nullable=True)
+    result_json = Column(Text, nullable=True)
 
     nodes = relationship("TaskNodeRecord", back_populates="task", lazy="select")
     logs = relationship("LogRecord", back_populates="task", lazy="select")
@@ -60,8 +51,11 @@ class TaskNodeRecord(Base):
     task_id = Column(String, ForeignKey("tasks.id"), nullable=False, index=True)
     node_id = Column(String, nullable=False)
     description = Column(Text, nullable=True)
-    status = Column(String, default=NodeStatus.CREATED, nullable=False)
+    status = Column(String, default=NodeState.PENDING.value, nullable=False)
     files_modified = Column(Integer, default=0, nullable=False)
+    attempts = Column(Integer, default=0, nullable=False, server_default="0")
+    error = Column(Text, nullable=True)
+    dependencies_json = Column(Text, nullable=True)
 
     task = relationship("TaskRecord", back_populates="nodes")
 

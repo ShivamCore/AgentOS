@@ -32,7 +32,6 @@ dependencies = [
     "celery[redis]>=5.4,<6.0",
     "redis>=5.0,<6.0",
     "requests>=2.31,<3.0",
-    "chromadb>=0.5,<1.0",
     "docker>=7.1,<8.0",
     "tenacity>=8.3,<9.0",
     "python-dotenv>=1.0,<2.0",
@@ -49,6 +48,7 @@ include = ["cli*", "agent*", "backend*"]
 exclude = ["tests*", "frontend*", "workspace*"]
 
 [project.optional-dependencies]
+memory = ["chromadb>=0.5,<0.6"]
 dev = [
     # Testing
     "pytest>=8.2,<9.0",
@@ -184,6 +184,10 @@ markers = [
     "perf: performance benchmarks",
     "benchmark: pytest-benchmark performance tests",
     "slow: tests that take > 5s",
+    "e2e: end-to-end tests through API -> worker -> scheduler -> tools",
+    "docker: requires a reachable Docker daemon and the agentos-sandbox image (skipped otherwise)",
+    "ollama: requires a running Ollama with AGENTOS_TEST_OLLAMA_MODEL installed (skipped otherwise)",
+    "unsafe_host: exercises the opt-in UnsafeHostExecutor with harmless local commands",
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════════

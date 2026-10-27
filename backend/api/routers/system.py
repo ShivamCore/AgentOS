@@ -1,9 +1,19 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 import subprocess
 import os
 import signal
 import requests
 from typing import Any, Dict
+
+from agent.llm import OLLAMA_TAGS_URL
+from backend.api.security import require_api_key
+
+
+def _process_control_enabled() -> None:
+    # Spawning/killing host processes from HTTP is disabled unless explicitly enabled.
+    if os.getenv("AGENTOS_ENABLE_PROCESS_CONTROL") != "1":
+        raise HTTPException(status_code=403, detail="process control is disabled (set AGENTOS_ENABLE_PROCESS_CONTROL=1)")
+
 
 router = APIRouter(prefix="/system", tags=["System Controller"])
 
@@ -13,7 +23,7 @@ system_state: Dict[str, Any] = {
     "celery_process": None
 }
 
-@router.post("/start")
+@router.post("/start", dependencies=[Depends(_process_control_enabled), Depends(require_api_key)])
 def start_system():
     if system_state["running"]:
         return {"status": "running"}
@@ -35,7 +45,7 @@ def start_system():
         stop_system()
         raise HTTPException(status_code=500, detail=f"Failed to start system: {str(e)}")
 
-@router.post("/stop")
+@router.post("/stop", dependencies=[Depends(_process_control_enabled), Depends(require_api_key)])
 def stop_system():
     if not system_state["running"]:
         return {"status": "stopped"}
@@ -86,7 +96,7 @@ def health_check():
 def llm_health_check():
     """Active network ping checking LLM tensor availability globally."""
     try:
-        response = requests.get("http://localhost:11434/api/tags", timeout=5)
+        response = requests.get(OLLAMA_TAGS_URL, timeout=5)
         response.raise_for_status()
         return {"status": "ok", "message": "Ollama LLM Reachable"}
     except requests.exceptions.RequestException as e:
@@ -96,7 +106,7 @@ def llm_health_check():
 def get_available_models():
     """Fetches local Ollama models dynamically."""
     try:
-        response = requests.get("http://localhost:11434/api/tags", timeout=5)
+        response = requests.get(OLLAMA_TAGS_URL, timeout=5)
         response.raise_for_status()
         data = response.json()
         models = [m.get("name") for m in data.get("models", [])]

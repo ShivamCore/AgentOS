@@ -19,7 +19,7 @@ from rich.console import Console
 
 from cli.commands.config import show_config
 from cli.commands.list_tasks import list_tasks
-from cli.commands.result import result, retry
+from cli.commands.result import cancel, result, retry
 from cli.commands.run import run_task
 from cli.commands.status import status
 from cli.commands.explain import explain_task
@@ -41,11 +41,12 @@ app.command("run", help="Submit a task and stream live progress.")(run_task)
 app.command("status", help="Check status and execution graph of a task.")(status)
 app.command("list", help="List recent tasks.")(list_tasks)
 app.command("result", help="Show structured result of a completed task.")(result)
-app.command("retry", help="Re-queue a failed task.")(retry)
+app.command("retry", help="Re-queue a failed, timed-out, cancelled or partial task.")(retry)
+app.command("cancel", help="Cancel a queued or running task.")(cancel)
 app.command("config", help="Show configuration and check API health.")(show_config)
 app.command("explain", help="Show the AI's planner reasoning and tool execution logic.")(explain_task)
 app.command("doctor", help="Run system diagnostics.")(run_doctor)
-app.command("demo", help="Run a predefined, impressive task optimized for screen recordings.")(run_demo)
+app.command("demo", help="Submit a small predefined task and watch it run.")(run_demo)
 
 
 @app.command("version")

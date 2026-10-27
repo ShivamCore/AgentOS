@@ -33,7 +33,6 @@ class TestTaskStatusEnum:
     def test_status_is_str_enum(self):
         """TaskStatus must be a str enum so it compares equal to raw strings."""
         from backend.models.sql_models import TaskStatus
-        import enum
 
         assert issubclass(TaskStatus, str), "TaskStatus must be (str, enum.Enum)"
         assert isinstance(TaskStatus.CREATED, str)
@@ -42,10 +41,10 @@ class TestTaskStatusEnum:
 
 class TestNodeStatusEnum:
     def test_all_expected_node_statuses_present(self):
-        """Every node lifecycle state must exist in NodeStatus."""
+        """Every node lifecycle state must exist in NodeStatus (agent.lifecycle.NodeState)."""
         from backend.models.sql_models import NodeStatus
 
-        expected = {"CREATED", "RUNNING", "COMPLETED", "FAILED"}
+        expected = {"PENDING", "READY", "RUNNING", "COMPLETED", "FAILED", "TIMED_OUT", "CANCELLED", "BLOCKED"}
         actual = {s.value for s in NodeStatus}
         missing = expected - actual
         assert not missing, f"Missing NodeStatus values: {missing}"

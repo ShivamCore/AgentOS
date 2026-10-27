@@ -7,7 +7,7 @@ Uses pydantic-settings for automatic .env loading and type validation.
 
 from __future__ import annotations
 
-from pydantic import AnyUrl, Field, field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -51,6 +51,26 @@ class Settings(BaseSettings):
         default=600,
         ge=30,
         description="Hard wall-clock limit per Celery task in seconds.",
+    )
+
+    STEP_MAX_RETRIES: int = Field(
+        default=1,
+        ge=0,
+        le=5,
+        description="Retries per DAG step after a failed attempt (the retry uses the debugger agent).",
+    )
+    STEP_TIMEOUT_SECONDS: int = Field(
+        default=180,
+        ge=5,
+        description="Wall-clock limit for one DAG step attempt (LLM call + sandboxed execution).",
+    )
+    ARCHIVE_WORKSPACES: bool = Field(
+        default=False,
+        description="If true, compress and delete each task workspace when the run ends.",
+    )
+    API_KEY: str | None = Field(
+        default=None,
+        description="If set, mutating API endpoints require the header 'X-API-Key: <value>'.",
     )
 
     # ── Rate Limiting ────────────────────────────────────────────────────────────

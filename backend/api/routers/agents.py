@@ -1,12 +1,23 @@
-from fastapi import APIRouter, HTTPException, Body
-from typing import List, Any
+import re
+
+from fastapi import APIRouter, Body, Depends, HTTPException
+
+from backend.api.security import require_api_key
 from agent.selector import _global_selector, get_selection_log
-from agent.loader import AgentLoader, AgentManifest, SecurityError, migrate_manifest
+from agent.loader import AgentManifest, SecurityError, migrate_manifest
 from pydantic import ValidationError
 import os
 import time
 
 router = APIRouter()
+
+_AGENT_NAME = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+
+
+def _agent_path(name: str) -> str:
+    if not _AGENT_NAME.match(name):
+        raise HTTPException(status_code=400, detail="invalid agent name")
+    return os.path.join(_global_selector.loader.agents_dir, f"{name}.md")
 
 @router.get("/status")
 def get_agents_status():
@@ -34,9 +45,11 @@ from pydantic import BaseModel
 class SaveAgentPayload(BaseModel):
     name: str
     content: str
-@router.post("/save")
+@router.post("/save", dependencies=[Depends(require_api_key)])
 def save_agent_file(payload: SaveAgentPayload):
+    _agent_path(payload.name)
     try:
+        _global_selector.loader.check_security(payload.content)
         # Save atomically
         _global_selector.loader.write_agent_file(payload.name, payload.content)
         # Reload memory
@@ -47,22 +60,20 @@ def save_agent_file(payload: SaveAgentPayload):
 
 @router.get("/{name}/content")
 def get_agent_content(name: str):
-    try:
-        path = os.path.join(_global_selector.loader.agents_dir, f"{name}.md")
-        if not os.path.exists(path):
-            raise HTTPException(status_code=404, detail="Agent file not found")
-        with open(path, "r", encoding="utf-8") as f:
-            return {"content": f.read()}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    path = _agent_path(name)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Agent file not found")
+    with open(path, encoding="utf-8") as f:
+        return {"content": f.read()}
 
 @router.get("/selection-log")
 def fetch_selection_log():
     return get_selection_log(limit=50)
 
 # CHANGED: Generates simulated Agent outputs evaluating specific profiles cleanly.
-@router.post("/{name}/test")
+@router.post("/{name}/test", dependencies=[Depends(require_api_key)])
 def test_agent_endpoint(name: str, payload: dict = Body(...)):
+    _agent_path(name)
     from agent.selector import execute_markdown_agent
     task_type = "code" if name == "coder" else "debug" if name == "debugger" else "plan"
     

@@ -1,0 +1,4 @@
+# Optional semantic memory (AGENTOS_MEMORY_ENABLED=1). Embedded client only.
+# Note: pip-audit reports advisories for chromadb's *server* mode (multi-tenant HTTP API);
+# AgentOS uses the in-process PersistentClient and does not expose that API.
+chromadb>=0.5.0,<0.6.0

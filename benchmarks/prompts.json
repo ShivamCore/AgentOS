@@ -1,0 +1,8 @@
+[
+  {"name": "fibonacci_dp", "num_predict": 200,
+   "prompt": "Write a Python function called fibonacci(n) that returns the nth Fibonacci number using dynamic programming. Include type hints."},
+  {"name": "binary_search_tree", "num_predict": 200,
+   "prompt": "Write a Python class BinarySearchTree with insert, search, and inorder_traversal methods. Include type hints and docstrings."},
+  {"name": "async_retry", "num_predict": 200,
+   "prompt": "Write a Python async function that retries a failing coroutine with exponential backoff (max 3 retries). Include type hints and error handling."}
+]

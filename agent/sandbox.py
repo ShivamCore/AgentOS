@@ -1,201 +1,406 @@
+"""
+AgentOS — Command execution sandbox
+====================================
+Every command an agent asks to run goes through ``get_sandbox()``. The policy
+is **fail-closed**:
+
+* The only isolating backend is ``DockerSandbox`` (one throw-away container per
+  command, no network, capped CPU/memory/PIDs/output, non-root, all capabilities
+  dropped, read-only root filesystem, only the task workspace mounted).
+* If Docker (or the sandbox image) is unavailable, ``get_sandbox()`` raises
+  ``SandboxUnavailableError``. There is no silent fallback.
+* ``UnsafeHostExecutor`` exists only for local development on machines without
+  Docker. It must be enabled explicitly with
+  ``AGENTOS_ALLOW_UNSAFE_HOST_EXECUTION=1``, logs a warning on every use, and is
+  **not a security boundary**: it runs generated code as the current user on the
+  host with a timeout, a scrubbed environment, output caps and best-effort rlimits.
+
+Resource limits come from server-side configuration (``SandboxPolicy.from_env``)
+and are never taken from planner or LLM output.
+"""
+
+from __future__ import annotations
+
+import logging
 import os
-import subprocess
 import shlex
-import tempfile
+import signal
+import subprocess
+import sys
+import threading
 import time
-from typing import Dict, Any, Optional
+from dataclasses import asdict, dataclass, field
+from typing import Any
 
-try:
+logger = logging.getLogger(__name__)
+
+try:  # The SDK is optional at import time so the rest of AgentOS can load without it.
     import docker
-    DOCKER_AVAILABLE = True
-except ImportError:
-    DOCKER_AVAILABLE = False
+    import docker.errors
+    import docker.types
+
+    DOCKER_SDK_AVAILABLE = True
+except ImportError:  # pragma: no cover - depends on environment
+    docker = None  # type: ignore[assignment]
+    DOCKER_SDK_AVAILABLE = False
+
+UNSAFE_ENV_FLAG = "AGENTOS_ALLOW_UNSAFE_HOST_EXECUTION"
+DEFAULT_IMAGE = "agentos-sandbox:latest"
+
+# argv[0] values an agent may invoke. This is a policy guard that keeps agents on
+# the intended workload; the container, not this list, is the security boundary.
+COMMAND_ALLOWLIST = frozenset({
+    "python", "python3", "pytest",
+    "ls", "cat", "echo", "pwd", "head", "tail", "wc", "diff", "grep", "mkdir", "touch",
+})
 
 
-class SandboxParams:
-    """Resource constraints for execution environments."""
-    def __init__(self, 
-                 timeout_sec: int = 120, 
-                 max_memory_mb: int = 512, 
-                 cpus: float = 1.0, 
-                 network_disabled: bool = True):
-        self.timeout_sec = timeout_sec
-        self.max_memory_mb = max_memory_mb
-        self.cpus = cpus
-        self.network_disabled = network_disabled
+class SandboxUnavailableError(RuntimeError):
+    """Raised when no acceptable execution backend is available (fail-closed)."""
 
 
+class CommandRejectedError(ValueError):
+    """Raised when a command is malformed or not permitted by policy."""
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+@dataclass(frozen=True)
+class SandboxPolicy:
+    """Server-side execution limits. Immutable; not influenced by agent output."""
+
+    timeout_sec: int = 60
+    memory_mb: int = 512
+    cpus: float = 1.0
+    pids_limit: int = 128
+    max_output_bytes: int = 64 * 1024
+    tmpfs_mb: int = 64
+    image: str = DEFAULT_IMAGE
+    network_disabled: bool = True
+
+    @classmethod
+    def from_env(cls) -> SandboxPolicy:
+        return cls(
+            timeout_sec=_env_int("SANDBOX_TIMEOUT_SECONDS", cls.timeout_sec),
+            memory_mb=_env_int("SANDBOX_MEMORY_MB", cls.memory_mb),
+            cpus=float(os.getenv("SANDBOX_CPUS", str(cls.cpus))),
+            pids_limit=_env_int("SANDBOX_PIDS_LIMIT", cls.pids_limit),
+            max_output_bytes=_env_int("SANDBOX_MAX_OUTPUT_BYTES", cls.max_output_bytes),
+            tmpfs_mb=_env_int("SANDBOX_TMPFS_MB", cls.tmpfs_mb),
+            image=os.getenv("SANDBOX_IMAGE", DEFAULT_IMAGE),
+            # Network can only be *disabled* by configuration; there is no flag to enable it.
+            network_disabled=True,
+        )
+
+
+@dataclass
 class SandboxResult:
-    """Structured output for any tool executed inside the sandbox."""
-    def __init__(self, success: bool, stdout: str, stderr: str, exit_code: int, duration_sec: float):
-        self.success = success
-        self.stdout = stdout
-        self.stderr = stderr
-        self.exit_code = exit_code
-        self.duration_sec = duration_sec
+    success: bool
+    stdout: str
+    stderr: str
+    exit_code: int
+    duration_sec: float
+    backend: str
+    timed_out: bool = False
+    truncated: bool = False
+    meta: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "success": self.success,
-            "stdout": self.stdout,
-            "stderr": self.stderr,
-            "exit_code": self.exit_code,
-            "duration_sec": round(self.duration_sec, 2)
-        }
+    def to_dict(self) -> dict[str, Any]:
+        d = asdict(self)
+        d["duration_sec"] = round(self.duration_sec, 3)
+        return d
 
 
-class ExecutionSandbox:
-    """Base interface for an isolated execution environment."""
-    def __init__(self, workspace_dir: str, params: SandboxParams = None):
-        self.workspace_dir = os.path.realpath(workspace_dir)
-        self.params = params or SandboxParams()
-
-    def execute_command(self, cmd: str) -> SandboxResult:
-        raise NotImplementedError
-
-
-class SubprocessSandbox(ExecutionSandbox):
-    """
-    Fallback execution environment using native python subprocess.
-    Relies on standard OS process limits.
-    """
-    def execute_command(self, cmd: str) -> SandboxResult:
-        cmd_trimmed = cmd.strip()
-        if not cmd_trimmed:
-            return SandboxResult(True, "", "", 0, 0.0)
-
-        try:
-            parts = shlex.split(cmd_trimmed)
-        except ValueError as e:
-            return SandboxResult(False, "", f"Invalid command syntax: {e}", 1, 0.0)
-
-        start_time = time.time()
-        try:
-            # We strictly enforce no shell=True injection vulnerabilities
-            process = subprocess.run(
-                parts,
-                cwd=self.workspace_dir,
-                capture_output=True,
-                text=True,
-                timeout=self.params.timeout_sec
-            )
-            duration = time.time() - start_time
-            success = process.returncode == 0
-            
-            return SandboxResult(
-                success=success,
-                stdout=process.stdout.strip(),
-                stderr=process.stderr.strip(),
-                exit_code=process.returncode,
-                duration_sec=duration
-            )
-            
-        except subprocess.TimeoutExpired as e:
-            duration = time.time() - start_time
-            # Standardizing timeout behaviors
-            stdout = e.stdout.decode('utf-8') if e.stdout else ""
-            stderr = e.stderr.decode('utf-8') if e.stderr else ""
-            return SandboxResult(
-                success=False, 
-                stdout=stdout, 
-                stderr=f"Execution Timed Out after {self.params.timeout_sec}s.\n{stderr}", 
-                exit_code=124, 
-                duration_sec=duration
-            )
-        except Exception as e:
-            duration = time.time() - start_time
-            return SandboxResult(False, "", f"Exception executing command: {str(e)}", 1, duration)
+def parse_command(cmd: str) -> list[str]:
+    """Split a command string into argv (no shell) and enforce the allowlist."""
+    if not isinstance(cmd, str) or not cmd.strip():
+        raise CommandRejectedError("empty command")
+    if "\x00" in cmd:
+        raise CommandRejectedError("NUL byte in command")
+    try:
+        argv = shlex.split(cmd)
+    except ValueError as exc:
+        raise CommandRejectedError(f"invalid command syntax: {exc}") from exc
+    prog = os.path.basename(argv[0])
+    if prog not in COMMAND_ALLOWLIST:
+        raise CommandRejectedError(
+            f"command '{prog}' is not permitted; allowed: {', '.join(sorted(COMMAND_ALLOWLIST))}"
+        )
+    return argv
 
 
-class DockerSandbox(ExecutionSandbox):
-    """
-    Containerized Sandbox using Docker SDK.
-    Restricts CPU, RAM, Network, and mounts exactly the workspace dir.
-    """
-    def __init__(self, workspace_dir: str, params: SandboxParams = None):
-        super().__init__(workspace_dir, params)
-        if not DOCKER_AVAILABLE:
-            raise RuntimeError("Docker SDK python payload not initialized. 'pip install docker' is required.")
-        self.client = docker.from_env()
-        # Default agent container image. Must have python and common OS utils natively.
-        self.image = "python:3.11-slim"
+def _validate_workspace(workspace_dir: str) -> str:
+    real = os.path.realpath(workspace_dir)
+    if not os.path.isdir(real):
+        raise CommandRejectedError(f"workspace does not exist: {workspace_dir}")
+    home = os.path.realpath(os.path.expanduser("~"))
+    if real in ("/", home) or len(real.split(os.sep)) < 3:
+        raise CommandRejectedError(f"refusing to mount a broad host path as workspace: {real}")
+    return real
+
+
+def _decode_capped(data: bytes, cap: int) -> tuple[str, bool]:
+    truncated = len(data) > cap
+    text = data[:cap].decode("utf-8", errors="replace")
+    if truncated:
+        text += f"\n[... output truncated at {cap} bytes ...]"
+    return text, truncated
+
+
+# ── Docker backend ──────────────────────────────────────────────────────────────
+
+class DockerSandbox:
+    """One disposable container per command."""
+
+    backend = "docker"
+
+    def __init__(self, workspace_dir: str, policy: SandboxPolicy | None = None, client: Any = None) -> None:
+        self.workspace_dir = _validate_workspace(workspace_dir)
+        self.policy = policy or SandboxPolicy.from_env()
+        if client is None:
+            if not DOCKER_SDK_AVAILABLE:
+                raise SandboxUnavailableError("docker Python SDK is not installed")
+            try:
+                client = docker.from_env()
+                client.ping()
+            except Exception as exc:
+                raise SandboxUnavailableError(f"Docker daemon is not reachable: {exc}") from exc
+        self.client = client
         self._ensure_image()
 
-    def _ensure_image(self):
+    def _ensure_image(self) -> None:
         try:
-            self.client.images.get(self.image)
-        except docker.errors.ImageNotFound:
-            # Note: This network call bypasses offline configurations initially but prevents missing images natively.
-            self.client.images.pull(self.image)
+            self.client.images.get(self.policy.image)
+        except Exception as exc:
+            if os.getenv("AGENTOS_SANDBOX_PULL") == "1":
+                self.client.images.pull(self.policy.image)
+                return
+            raise SandboxUnavailableError(
+                f"sandbox image '{self.policy.image}' is not present locally; "
+                "build it with `make sandbox-image` (or set AGENTOS_SANDBOX_PULL=1)"
+            ) from exc
 
-    def execute_command(self, cmd: str) -> SandboxResult:
-        start_time = time.time()
-        
-        # Hard limits imposed via Docker runtime abstraction mapping
-        mem_limit = f"{self.params.max_memory_mb}m"
-        network_mode = "none" if self.params.network_disabled else "bridge"
-        # We specify the exact volume mount constraint mapping natively to workspace
-        volumes = {
-            self.workspace_dir: {'bind': '/workspace', 'mode': 'rw'}
+    def container_kwargs(self, argv: list[str]) -> dict[str, Any]:
+        """The exact isolation settings used for every container (unit-tested)."""
+        p = self.policy
+        uid = os.getuid() if hasattr(os, "getuid") else 65534
+        user = f"{uid}:{os.getgid()}" if uid != 0 else "65534:65534"
+        kwargs: dict[str, Any] = {
+            "image": p.image,
+            "command": argv,
+            "working_dir": "/workspace",
+            "user": user,
+            "environment": {"HOME": "/tmp", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONUNBUFFERED": "1"},  # nosec B108
+            "volumes": {self.workspace_dir: {"bind": "/workspace", "mode": "rw"}},
+            "network_mode": "none",
+            "network_disabled": True,
+            "mem_limit": f"{p.memory_mb}m",
+            "memswap_limit": f"{p.memory_mb}m",
+            "nano_cpus": int(p.cpus * 1e9),
+            "pids_limit": p.pids_limit,
+            "cap_drop": ["ALL"],
+            "security_opt": ["no-new-privileges:true"],
+            "privileged": False,
+            "read_only": True,
+            "tmpfs": {"/tmp": f"rw,noexec,nosuid,size={p.tmpfs_mb}m"},  # nosec B108 - container-internal tmpfs
+            "init": True,
+            "detach": True,
         }
-        
+        if DOCKER_SDK_AVAILABLE:
+            kwargs["ulimits"] = [docker.types.Ulimit(name="nofile", soft=256, hard=256)]
+        return kwargs
+
+    def run(self, argv: list[str]) -> SandboxResult:
+        start = time.monotonic()
+        container = None
+        timed_out = False
         try:
-            # Use 'sh -c' wrapped command inside the container natively
-            # The container execution is spun and killed instantly on termination
-            container = self.client.containers.run(
-                self.image,
-                command=["sh", "-c", cmd],
-                working_dir="/workspace",
-                volumes=volumes,
-                network_mode=network_mode,
-                mem_limit=mem_limit,
-                nano_cpus=int(self.params.cpus * 1e9),
-                detach=True,
-                auto_remove=False # We fetch logs first before manually cleaning
-            )
-            
+            kwargs = self.container_kwargs(argv)
+            image = kwargs.pop("image")
+            container = self.client.containers.create(image, **kwargs)
+            container.start()
             try:
-                # Wait for container termination explicitly mapped to requested Timeout bounds
-                result = container.wait(timeout=self.params.timeout_sec)
-                exit_code = result.get('StatusCode', 1)
-                
-                # Fetch output streams mapping native standard out streams cleanly via SDK
-                logs = container.logs(stdout=True, stderr=True, stream=False).decode('utf-8', errors='replace')
-                
-                # Simple heuristic to split stdout/stderr from raw SDK outputs
-                return SandboxResult(
-                    success=(exit_code == 0),
-                    stdout=logs.strip() if exit_code == 0 else "",
-                    stderr=logs.strip() if exit_code != 0 else "",
-                    exit_code=exit_code,
-                    duration_sec=time.time() - start_time
-                )
-                
-            except Exception as wait_exc:
-                duration = time.time() - start_time
-                if "Read timed out" in str(wait_exc) or "timeout" in str(wait_exc).lower():
+                status = container.wait(timeout=self.policy.timeout_sec)
+                exit_code = int(status.get("StatusCode", 1))
+            except Exception:
+                # docker-py raises requests' ReadTimeout/ConnectionError on wait timeout.
+                timed_out = True
+                exit_code = 124
+                try:
                     container.kill()
-                    return SandboxResult(False, "", f"Execution Timed Out after {self.params.timeout_sec}s and container was killed.", 124, duration)
-                raise wait_exc
-                
-            finally:
+                except Exception:
+                    logger.warning("failed to kill timed-out container", exc_info=True)
+            cap = self.policy.max_output_bytes
+            out, t1 = _decode_capped(container.logs(stdout=True, stderr=False) or b"", cap)
+            err, t2 = _decode_capped(container.logs(stdout=False, stderr=True) or b"", cap)
+            state = {}
+            try:
+                container.reload()
+                state = container.attrs.get("State", {}) if isinstance(container.attrs, dict) else {}
+            except Exception:
+                pass
+            if state.get("OOMKilled"):
+                err += "\n[sandbox] process killed: memory limit exceeded"
+            if timed_out:
+                err += f"\n[sandbox] timed out after {self.policy.timeout_sec}s; container killed"
+            return SandboxResult(
+                success=(exit_code == 0 and not timed_out),
+                stdout=out, stderr=err.strip(), exit_code=exit_code,
+                duration_sec=time.monotonic() - start, backend=self.backend,
+                timed_out=timed_out, truncated=t1 or t2,
+                meta={"oom_killed": bool(state.get("OOMKilled"))},
+            )
+        except SandboxUnavailableError:
+            raise
+        except Exception as exc:
+            return SandboxResult(False, "", f"sandbox error: {exc}", 1, time.monotonic() - start, self.backend)
+        finally:
+            if container is not None:
                 try:
                     container.remove(force=True)
                 except Exception:
-                    pass
+                    logger.warning("failed to remove sandbox container", exc_info=True)
 
-        except Exception as e:
-            return SandboxResult(False, "", f"Sandbox Initialization Error: {str(e)}", 1, time.time() - start_time)
+    def execute_command(self, cmd: str) -> SandboxResult:
+        return self.run(parse_command(cmd))
 
 
-def get_sandbox(workspace_dir: str, prefer_docker: bool = True, params: SandboxParams = None) -> ExecutionSandbox:
+# ── Explicitly-enabled, NON-isolating host executor ─────────────────────────────
+
+class UnsafeHostExecutor:
     """
-    Factory resolving the most restrictive sandbox backend available natively.
-    Degrades to Subprocess gracefully without causing application downtime.
+    Development-only executor. NOT A SANDBOX: code runs on the host as the
+    current user and can read anything that user can read. Provided so the
+    pipeline can be exercised without Docker; never selected implicitly.
     """
-    if prefer_docker and DOCKER_AVAILABLE:
+
+    backend = "unsafe-host"
+
+    def __init__(self, workspace_dir: str, policy: SandboxPolicy | None = None) -> None:
+        self.workspace_dir = _validate_workspace(workspace_dir)
+        self.policy = policy or SandboxPolicy.from_env()
+
+    def _preexec(self) -> None:  # pragma: no cover - runs in the child
         try:
-            return DockerSandbox(workspace_dir, params)
+            import resource
+
+            cpu = max(1, int(self.policy.timeout_sec))
+            resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu + 1))
+            fsize = 16 * 1024 * 1024
+            resource.setrlimit(resource.RLIMIT_FSIZE, (fsize, fsize))
+            if sys.platform.startswith("linux"):  # RLIMIT_AS is not enforced on macOS
+                mem = self.policy.memory_mb * 1024 * 1024
+                resource.setrlimit(resource.RLIMIT_AS, (mem, mem))
         except Exception:
-            pass # Fall back to subprocess natively
-    return SubprocessSandbox(workspace_dir, params)
+            pass
+
+    def run(self, argv: list[str]) -> SandboxResult:
+        logger.warning("UNSAFE host execution (no isolation): %s", argv)
+        cap = self.policy.max_output_bytes
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": self.workspace_dir,
+            "LANG": "C.UTF-8",
+            "PYTHONDONTWRITEBYTECODE": "1",
+        }
+        if argv[0] in ("python", "python3"):
+            argv = [sys.executable, *argv[1:]]
+        elif argv[0] == "pytest":
+            argv = [sys.executable, "-m", "pytest", *argv[1:]]
+        start = time.monotonic()
+        try:
+            proc = subprocess.Popen(  # noqa: S603 - argv list, no shell
+                argv, cwd=self.workspace_dir, env=env,
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                start_new_session=True,
+                preexec_fn=self._preexec if os.name == "posix" else None,  # noqa: PLW1509
+            )
+        except OSError as exc:
+            return SandboxResult(False, "", f"failed to start: {exc}", 127, 0.0, self.backend)
+
+        buffers: dict[str, bytearray] = {"out": bytearray(), "err": bytearray()}
+        overflow = {"out": False, "err": False}
+
+        def _drain(stream: Any, key: str) -> None:
+            for chunk in iter(lambda: stream.read(8192), b""):
+                buf = buffers[key]
+                room = cap + 1 - len(buf)
+                if room > 0:
+                    buf.extend(chunk[:room])
+                if len(chunk) > room:
+                    overflow[key] = True
+
+        readers = [
+            threading.Thread(target=_drain, args=(proc.stdout, "out"), daemon=True),
+            threading.Thread(target=_drain, args=(proc.stderr, "err"), daemon=True),
+        ]
+        for t in readers:
+            t.start()
+        timed_out = False
+        try:
+            proc.wait(timeout=self.policy.timeout_sec)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        # Kill the whole process group so children cannot outlive the step.
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        proc.wait()
+        for t in readers:
+            t.join(timeout=2)
+        out, t1 = _decode_capped(bytes(buffers["out"]), cap)
+        err, t2 = _decode_capped(bytes(buffers["err"]), cap)
+        if timed_out:
+            err += f"\n[unsafe-host] timed out after {self.policy.timeout_sec}s; process group killed"
+        code = 124 if timed_out else proc.returncode
+        return SandboxResult(
+            success=(code == 0), stdout=out, stderr=err.strip(), exit_code=code,
+            duration_sec=time.monotonic() - start, backend=self.backend,
+            timed_out=timed_out, truncated=t1 or t2 or overflow["out"] or overflow["err"],
+        )
+
+    def execute_command(self, cmd: str) -> SandboxResult:
+        return self.run(parse_command(cmd))
+
+
+def unsafe_host_execution_enabled() -> bool:
+    return os.getenv(UNSAFE_ENV_FLAG, "").strip() == "1"
+
+
+def get_sandbox(workspace_dir: str, policy: SandboxPolicy | None = None) -> DockerSandbox | UnsafeHostExecutor:
+    """
+    Return the execution backend. Docker is required unless the operator has
+    explicitly opted into unsafe host execution. Never degrades silently.
+    """
+    try:
+        return DockerSandbox(workspace_dir, policy)
+    except SandboxUnavailableError as exc:
+        if unsafe_host_execution_enabled():
+            logger.warning(
+                "Docker sandbox unavailable (%s); %s=1 is set, using UNSAFE host execution", exc, UNSAFE_ENV_FLAG
+            )
+            return UnsafeHostExecutor(workspace_dir, policy)
+        raise SandboxUnavailableError(
+            f"{exc}. Command execution is disabled (fail-closed). Install/start Docker and build the "
+            f"sandbox image, or for local development only set {UNSAFE_ENV_FLAG}=1."
+        ) from exc
+
+
+def sandbox_status() -> dict[str, Any]:
+    """Diagnostic used by `agentos doctor` and /health."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="agentos-probe-") as d:
+        try:
+            DockerSandbox(d)
+            return {"backend": "docker", "available": True, "detail": "Docker sandbox ready"}
+        except (SandboxUnavailableError, CommandRejectedError) as exc:
+            if unsafe_host_execution_enabled():
+                return {"backend": "unsafe-host", "available": True, "detail": f"UNSAFE host execution enabled ({exc})"}
+            return {"backend": None, "available": False, "detail": str(exc)}

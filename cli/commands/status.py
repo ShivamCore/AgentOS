@@ -28,12 +28,18 @@ _STATUS_COLOR = {
     "COMPLETED": "green",
     "PARTIAL_SUCCESS": "yellow",
     "FAILED": "red",
+    "TIMED_OUT": "red",
+    "CANCELLED": "magenta",
 }
 _NODE_ICON = {
-    "CREATED": "○",
+    "PENDING": "○",
+    "READY": "◌",
     "RUNNING": "◉",
     "COMPLETED": "✓",
     "FAILED": "✗",
+    "TIMED_OUT": "⏱",
+    "CANCELLED": "⊘",
+    "BLOCKED": "⤫",
 }
 
 

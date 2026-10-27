@@ -4,7 +4,7 @@ import re
 import tempfile
 import threading
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, List
 from pydantic import BaseModel, Field, ValidationError
 
 # CHANGED: Introduced specific Error classes for the CSP and schema loaders per specifications.
@@ -30,7 +30,7 @@ class AgentManifest(BaseModel):
 
 # CHANGED: Auto-migrate utility to upgrade any v0 agents missing version flags.
 def migrate_manifest(data: dict) -> dict:
-    version = int(data.get("schema_version", 1))
+    int(data.get("schema_version", 1))
     data["schema_version"] = 1
     if "max_input_tokens" not in data: data["max_input_tokens"] = 8000
     if "max_output_tokens" not in data: data["max_output_tokens"] = 4000

@@ -9,12 +9,10 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
 
 from cli import client
 from cli.client import APIError

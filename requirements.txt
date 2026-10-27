@@ -26,8 +26,9 @@ python-multipart>=0.0.9,<0.1.0
 psutil>=5.9.0,<7.0.0
 tenacity>=8.3.0,<9.0.0
 
-# ── Memory Engine ───────────────────────────────────────────────────────────────
-chromadb>=0.5.0,<0.6.0
+# ── Memory Engine (optional) ────────────────────────────────────────────────────
+# chromadb is optional and off by default (AGENTOS_MEMORY_ENABLED=1 to use it):
+#   pip install -r requirements-memory.txt
 
 # ── Sandbox ─────────────────────────────────────────────────────────────────────
 docker>=7.0.0,<8.0.0

@@ -14,10 +14,8 @@ from __future__ import annotations
 
 import ast
 import inspect
-import textwrap
-import uuid
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -56,7 +54,7 @@ class TestStatusStringRegression:
                         bad_literals.append((node.lineno, node.value))
 
         assert bad_literals == [], (
-            f"Found lowercase status literal(s) in tasks.py — use TaskStatus enum:\n"
+            "Found lowercase status literal(s) in tasks.py — use TaskStatus enum:\n"
             + "\n".join(f"  line {lineno}: {val!r}" for lineno, val in bad_literals)
         )
 
@@ -132,7 +130,7 @@ class TestFunctionDecomposition:
                 pass
 
         assert overlong == [], (
-            f"Functions exceeding 100 lines:\n"
+            "Functions exceeding 100 lines:\n"
             + "\n".join(f"  {n}: {l} lines" for n, l in overlong)
         )
 

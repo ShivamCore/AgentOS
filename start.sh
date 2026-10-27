@@ -13,6 +13,12 @@ echo "📂 Working directory: $REPO"
 echo "🐍 PYTHONPATH: $PYTHONPATH"
 echo ""
 
+# ── Activate virtual environment ─────────────────────────────────────────────
+if [ -f "$REPO/.venv/bin/activate" ]; then
+  source "$REPO/.venv/bin/activate"
+  echo "✅ Activated .venv (Python $(python3 --version))"
+fi
+
 # ── Ollama stability settings ────────────────────────────────────────────────
 # Prevents model unload between tasks (eliminates restart-loop on long queues)
 export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-30m}"
@@ -42,7 +48,7 @@ sleep 1
 
 # ── Run schema migration (safe / idempotent) ─────────────────────────────────
 echo "🗄️  Running DB migration..."
-python db_migrate.py
+python3 db_migrate.py
 echo ""
 
 # ── Backend ──────────────────────────────────────────────────────────────────

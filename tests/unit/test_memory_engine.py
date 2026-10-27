@@ -11,13 +11,8 @@ REGRESSION PROOF: These tests prove the critical bug is dead:
 
 from __future__ import annotations
 
-import logging
-import subprocess
-import sys
-import textwrap
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from functools import lru_cache
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 

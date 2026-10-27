@@ -6,16 +6,13 @@ ModelRouter — task-aware LLM selection with quantization tier support.
 Design:
   - Three tiers: accuracy (planning), speed (execution), balanced (debugging)
   - Each tier has an ordered preference list; first available model wins
-  - TurboQuant = smallest quantized model in the speed tier (INT4/Q4_0)
+  - "speed" tier = smallest installed model in the preference list (no speed or
+    quality claim is made here; see docs/benchmarking.md for measured numbers)
   - Runtime discovery via Ollama /api/tags with a 5-minute TTL cache
   - Thread-safe; safe to call from Celery worker threads
   - Fully backward-compatible: select_model() still works as before
 
-Quantization priority (best speed, acceptable quality):
-  Q4_0  → smallest, fastest  (TurboQuant equivalent for GGUF)
-  Q4_K_M → good balance
-  Q5_K_M → higher quality
-  F16    → full precision (avoid for execution tasks)
+If OLLAMA_MODEL is set it is used for every role.
 """
 
 from __future__ import annotations
@@ -25,7 +22,6 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Optional
 
 import requests
 
@@ -34,7 +30,7 @@ logger = logging.getLogger(__name__)
 # ── Tier definitions ──────────────────────────────────────────────────────────
 # Each tier is an ordered list of preferred model names.
 # The router picks the first name that is actually available in Ollama.
-# Add your TurboQuant / custom GGUF model names here.
+# Add custom model tags here.
 
 _TIER_ACCURACY = [          # planning — needs coherent multi-step reasoning
     "llama3.1:8b",
@@ -45,7 +41,7 @@ _TIER_ACCURACY = [          # planning — needs coherent multi-step reasoning
 ]
 
 _TIER_SPEED = [             # execution — needs fast JSON output, low latency
-    "deepseek-coder:1.3b",  # Q4_0 — TurboQuant equivalent (smallest, fastest)
+    "deepseek-coder:1.3b",
     "qwen2.5-coder:1.5b-base",
     "deepseek-coder:6.7b",
     "llama3.2:3b",
@@ -73,7 +69,7 @@ _QUANT_SCORE: dict[str, int] = {
     "Q8_0":    80,
     "Q5_K_M":  60,
     "Q4_K_M":  50,
-    "Q4_0":    40,   # TurboQuant tier
+    "Q4_0":    40,
     "Q3_K_M":  30,
     "Q2_K":    20,
 }
@@ -128,7 +124,7 @@ class ModelRouter:
         self._available: list[ModelInfo] = []
         self._available_names: set[str] = set()
         self._cache_ts: float = 0.0
-        self._default_model = os.getenv("OLLAMA_MODEL", "deepseek-coder:6.7b")
+        self._default_model = os.getenv("OLLAMA_MODEL", os.getenv("DEV_MODE_MODEL", "deepseek-coder:1.3b"))
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -155,6 +151,13 @@ class ModelRouter:
                 model=user_override,
                 tier="override",
                 reason=f"user override: {user_override}",
+            )
+        # An explicitly configured OLLAMA_MODEL is used for every role.
+        if os.getenv("OLLAMA_MODEL"):
+            return RoutingDecision(
+                model=os.environ["OLLAMA_MODEL"],
+                tier="configured",
+                reason="OLLAMA_MODEL is set",
             )
 
         # On retry, always downgrade to the fastest available model

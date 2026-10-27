@@ -3,7 +3,6 @@ import json
 import asyncio
 import redis.asyncio as redis
 import os
-import shlex
 
 router = APIRouter(prefix="/ws", tags=["Streaming"])
 

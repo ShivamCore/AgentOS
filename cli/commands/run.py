@@ -19,7 +19,6 @@ import typer
 from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
-from rich.spinner import Spinner
 from rich.text import Text
 
 from cli import client
@@ -28,7 +27,9 @@ from cli.config import cfg
 
 console = Console()
 
-_DONE = {"COMPLETED", "FAILED", "PARTIAL_SUCCESS"}
+from agent.lifecycle import RUN_TERMINAL
+
+_DONE = {s.value for s in RUN_TERMINAL}
 
 
 def _build_live_panel(
@@ -52,8 +53,8 @@ def _build_live_panel(
         lines.append(Text.assemble(("⚙️ Executing...", "yellow"), (f"  Model: {model}", "dim")))
     elif status == "COMPLETED":
         lines.append(Text.assemble(("✅ Task Completed", "bold green")))
-    elif status == "FAILED":
-        lines.append(Text.assemble(("❌ Task Failed", "bold red")))
+    elif status in ("FAILED", "TIMED_OUT", "CANCELLED", "PARTIAL_SUCCESS"):
+        lines.append(Text.assemble((f"❌ Task {status}", "bold red")))
     else:
         lines.append(Text(f"Status: {status}"))
     
@@ -62,20 +63,18 @@ def _build_live_panel(
     # Nodes / Steps Display
     total = max(len(nodes), 1)
     for i, node in enumerate(nodes, 1):
-        n_status = node.get("status", "CREATED")
+        n_status = node.get("status", "PENDING")
         desc = node.get("description", "Unknown step")
         nid = node.get("node_id", "")
         
         if n_status == "COMPLETED":
             lines.append(Text.assemble((f"  ✓ Step {i}/{total}: ", "green"), (desc, "dim")))
-        elif n_status == "FAILED":
-            lines.append(Text.assemble((f"  ✗ Step {i}/{total}: ", "red"), (desc, "red")))
+        elif n_status in ("FAILED", "TIMED_OUT", "BLOCKED", "CANCELLED"):
+            lines.append(Text.assemble((f"  ✗ Step {i}/{total} [{n_status}]: ", "red"), (desc, "red")))
         elif n_status == "RUNNING":
             eta_str = ""
             if step_start_times and nid in step_start_times:
-                elapsed = time.time() - step_start_times[nid]
-                rem = max(1, 15 - elapsed)
-                eta_str = f" (≈ {rem:.0f}s remaining)"
+                eta_str = f" ({time.time() - step_start_times[nid]:.0f}s elapsed)"
             lines.append(Text.assemble((f"  ⚙️ Step {i}/{total}: ", "yellow"), (desc, "bold"), (eta_str, "dim")))
         else:
             if watch:
@@ -247,5 +246,5 @@ def run_task(
         from cli.commands.result import _display_result
         _display_result(task_id, json_out=True) # Always JSON if silent
 
-    if current_status == "FAILED":
+    if current_status != "COMPLETED":
         raise typer.Exit(code=1)

@@ -13,11 +13,9 @@ REGRESSION PROOF: These tests prove the backpressure bug is dead.
 from __future__ import annotations
 
 import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from tests.conftest import seed_task
 
@@ -38,7 +36,6 @@ class TestBackpressure:
         for _ in range(3):
             seed_task(db, status="CREATED")
 
-        from backend.api.routers.task import _check_backpressure
         from backend.config import settings
 
         original_limit = settings.MAX_CONCURRENT_TASKS
@@ -50,7 +47,6 @@ class TestBackpressure:
                 mock_settings.MAX_CONCURRENT_TASKS = 100
                 # We verify by calling with a very high limit — if count was 0 the
                 # function would never raise regardless. We check the internal count here.
-                from sqlalchemy import func
                 from backend.models.sql_models import TaskRecord
                 count = db.query(TaskRecord).filter(
                     TaskRecord.status.in_(["CREATED", "PLANNED", "RUNNING"])

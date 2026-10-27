@@ -30,6 +30,8 @@ _STATUS_COLOR = {
     "COMPLETED": "green",
     "PARTIAL_SUCCESS": "yellow",
     "FAILED": "red",
+    "TIMED_OUT": "red",
+    "CANCELLED": "magenta",
 }
 
 

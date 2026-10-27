@@ -12,7 +12,6 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.conftest import seed_task
 
 
 class TestSQLInjection:

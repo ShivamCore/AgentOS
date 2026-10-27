@@ -119,3 +119,16 @@ chroma_data/
 # ── Profiling ────────────────────────────────────────────────────────────────
 *.prof
 *.lprof
+
+# ── AgentOS runtime artifacts ─────────────────────────────────────────────────
+.memory/
+*.db-wal
+*.db-shm
+.DS_Store
+# macOS AppleDouble metadata created on non-HFS volumes
+._*
+# Code removed during the 2026-10 overhaul (kept locally for reference; not part of the project)
+.attic/
+
+# pytest basetemp created in the repo root by some runs
+pytest-of-*/

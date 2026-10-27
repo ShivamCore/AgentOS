@@ -9,6 +9,7 @@ import os
 import psutil
 import redis as redis_pkg
 from fastapi import APIRouter
+from agent.lifecycle import RunState
 from backend.config import settings
 from backend.db.database import SessionLocal
 from backend.models.sql_models import TaskRecord
@@ -22,6 +23,15 @@ def liveness():
     return {"status": "ok"}
 
 
+@router.get("/health/dependencies")
+def dependency_health():
+    """Readiness of the components a task needs: Ollama + configured model, and the sandbox."""
+    from agent.llm import ollama_health
+    from agent.sandbox import sandbox_status
+
+    return {"ollama": ollama_health(), "sandbox": sandbox_status()}
+
+
 @router.get("/health/resources")
 def resource_monitor():
     """
@@ -31,10 +41,10 @@ def resource_monitor():
     # ── Queue depth from DB ────────────────────────────────────────
     db = SessionLocal()
     try:
-        pending  = db.query(TaskRecord).filter(TaskRecord.status == "pending").count()
-        running  = db.query(TaskRecord).filter(TaskRecord.status == "running").count()
-        failed   = db.query(TaskRecord).filter(TaskRecord.status == "failed").count()
-        completed = db.query(TaskRecord).filter(TaskRecord.status == "completed").count()
+        pending  = db.query(TaskRecord).filter(TaskRecord.status.in_([RunState.CREATED.value, RunState.PLANNED.value])).count()
+        running  = db.query(TaskRecord).filter(TaskRecord.status == RunState.RUNNING.value).count()
+        failed   = db.query(TaskRecord).filter(TaskRecord.status.in_([RunState.FAILED.value, RunState.TIMED_OUT.value])).count()
+        completed = db.query(TaskRecord).filter(TaskRecord.status == RunState.COMPLETED.value).count()
     finally:
         db.close()
 

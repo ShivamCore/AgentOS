@@ -7,11 +7,8 @@ Uses real in-memory SQLite, mocked LLM + Celery, and fakeredis.
 
 from __future__ import annotations
 
-import asyncio
-import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 from tests.conftest import seed_task
 
@@ -73,7 +70,6 @@ class TestTaskStateTransitions:
         Verify state machine transitions: COMPLETED must not enter RUNNING.
         Enforced by the retry endpoint's 409 guard.
         """
-        from backend.models.sql_models import TaskRecord
 
         task = seed_task(db, status="COMPLETED")
         # Attempting to manually set RUNNING after COMPLETED must be caught at API level
@@ -104,7 +100,6 @@ class TestConcurrentTaskSubmission:
         Submit 10 tasks from the same thread sequentially (simulating concurrent load).
         All 10 must appear in the DB with unique IDs.
         """
-        from backend.models.sql_models import TaskRecord
 
         task_ids = set()
         for i in range(10):

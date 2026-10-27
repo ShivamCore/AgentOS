@@ -96,3 +96,15 @@ def retry(
     console.print(f"[green]✓ Task re-queued[/green]  [dim]{resp.get('task_id', task_id)}[/dim]")
     console.print(f"  Track: [cyan]agentos status {task_id}[/cyan]")
     console.print()
+
+
+def cancel(
+    task_id: str = typer.Argument(..., help="Task ID to cancel."),
+) -> None:
+    """Request cancellation of a queued or running task."""
+    try:
+        resp = client.cancel_task(task_id)
+    except APIError as e:
+        console.print(f"[red]✗ {e.detail}[/red]")
+        raise typer.Exit(code=1)
+    console.print(f"[yellow]⊘ Cancellation requested[/yellow]  [dim]{task_id} (status: {resp.get('status')})[/dim]")

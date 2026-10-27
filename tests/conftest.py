@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import fakeredis
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 # ── DB Setup ─────────────────────────────────────────────────────────────────────
@@ -120,7 +120,12 @@ def mock_celery() -> Generator:
     """
     mock_task = MagicMock()
     mock_task.apply_async = MagicMock(return_value=MagicMock(id=str(uuid.uuid4())))
-    with patch("backend.workers.tasks.run_agent_task", mock_task):
+    # The router imports run_agent_task by name, so patch that reference too;
+    # otherwise apply_async would publish to whatever broker REDIS_URL points at.
+    with (
+        patch("backend.workers.tasks.run_agent_task", mock_task),
+        patch("backend.api.routers.task.run_agent_task", mock_task),
+    ):
         yield mock_task
 
 

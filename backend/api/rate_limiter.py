@@ -10,7 +10,6 @@ Usage inside a FastAPI route:
         limiter.check(request)   # raises HTTP 429 if over limit
         ...
 """
-import time
 import redis as redis_pkg
 from fastapi import HTTPException, Request
 from backend.config import settings
