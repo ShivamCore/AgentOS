@@ -555,11 +555,20 @@ jobs:
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
+      # The pushed tags are lowercased by docker/metadata-action and use the
+      # 7-char short SHA (type=sha); build the same reference for the scan.
+      - name: Resolve pushed image reference
+        id: image
+        if: github.event_name != 'pull_request'
+        run: |
+          image=$(echo "${REGISTRY}/${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')
+          echo "ref=${image}:sha-$(echo "$GITHUB_SHA" | cut -c1-7)" >> "$GITHUB_OUTPUT"
+
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@v0.36.0
         if: github.event_name != 'pull_request'
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          image-ref: ${{ steps.image.outputs.ref }}
           severity: HIGH,CRITICAL
           exit-code: 0
           format: sarif
