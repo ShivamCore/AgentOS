@@ -118,9 +118,10 @@ class ModelRouter:
     _CACHE_TTL = 300  # seconds before re-querying Ollama for available models
 
     def __init__(self, ollama_tags_url: str | None = None) -> None:
-        self._tags_url = ollama_tags_url or os.getenv(
-            "OLLAMA_TAGS_URL", "http://localhost:11434/api/tags"
-        )
+        # Same endpoint resolution as the client (OLLAMA_TAGS_URL / OLLAMA_HOST).
+        from agent.llm import OLLAMA_TAGS_URL
+
+        self._tags_url: str = ollama_tags_url or OLLAMA_TAGS_URL
         self._lock = threading.Lock()
         self._available: list[ModelInfo] = []
         self._available_names: set[str] = set()

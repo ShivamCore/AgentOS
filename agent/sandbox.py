@@ -228,7 +228,7 @@ class DockerSandbox:
                 "HOME": CONTAINER_TMP,
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "PYTHONUNBUFFERED": "1",
-            },  # nosec B108
+            },
             "volumes": {self.workspace_dir: {"bind": "/workspace", "mode": "rw"}},
             "network_mode": "none",
             "network_disabled": True,
