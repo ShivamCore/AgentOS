@@ -56,6 +56,10 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends libpq5 curl && \
     rm -rf /var/lib/apt/lists/*
 
+# The base image ships pip 24.0 and setuptools 79 (which vendors vulnerable
+# jaraco.context and wheel). Upgrade the system copies; Trivy fails on them.
+RUN pip install --no-cache-dir --upgrade "pip>=26.2.2" "setuptools>=84.2.1"
+
 # Create non-root user (uid=1000, no login shell)
 RUN groupadd --gid 1000 appuser && \
     useradd --uid 1000 --gid appuser --shell /usr/sbin/nologin --create-home appuser
