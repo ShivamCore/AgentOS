@@ -49,8 +49,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app \
     PATH="/home/appuser/.local/bin:${PATH}"
 
-# Install only the runtime system deps (no gcc, no build tools)
+# Install only the runtime system deps (no gcc, no build tools) and pick up
+# Debian security updates published since the base image was built.
 RUN apt-get update && \
+    apt-get upgrade -y --no-install-recommends && \
     apt-get install -y --no-install-recommends libpq5 curl && \
     rm -rf /var/lib/apt/lists/*
 
