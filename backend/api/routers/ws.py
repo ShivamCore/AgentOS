@@ -1,19 +1,33 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-import json
 import asyncio
-import redis.asyncio as redis
+import hmac
+import json
+import logging
 import os
-import shlex
 
+from typing import Any
+
+import redis.asyncio as redis
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from redis.exceptions import ConnectionError as RedisConnectionError
+
+from backend.config import settings
+
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ws", tags=["Streaming"])
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 # ── Workspace the terminal starts in ─────────────────────────────────────────
 TERMINAL_CWD = os.getenv("WORKSPACE_DIR", os.path.expanduser("~"))
+TERMINAL_ENV_FLAG = "AGENTOS_ENABLE_WEB_TERMINAL"
+_LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+# RFC 6455 close code 1008: policy violation.
+_POLICY_VIOLATION = 1008
+
 
 @router.websocket("/logs/{task_id}")
-async def stream_logs(websocket: WebSocket, task_id: str, last_seq: int = -1):
+async def stream_logs(websocket: WebSocket, task_id: str, last_seq: int = -1) -> None:
     """
     Streams task logs in real-time via Redis Pub/Sub.
 
@@ -22,14 +36,14 @@ async def stream_logs(websocket: WebSocket, task_id: str, last_seq: int = -1):
     duplicate log display on WebSocket reconnect.
     """
     await websocket.accept()
-    r = redis.from_url(REDIS_URL, decode_responses=True)
+    r: Any = redis.from_url(REDIS_URL, decode_responses=True)  # type: ignore[no-untyped-call]
     pubsub = r.pubsub()
     await pubsub.subscribe(f"task_stream:{task_id}")
 
     # Track the highest seq_id seen in THIS connection session
     seen_seq: int = last_seq
 
-    async def redis_reader():
+    async def redis_reader() -> None:
         nonlocal seen_seq
         while True:
             try:
@@ -45,12 +59,12 @@ async def stream_logs(websocket: WebSocket, task_id: str, last_seq: int = -1):
                                 seen_seq = msg_seq
                             # ─────────────────────────────────────────
                             await websocket.send_json(data)
-                        except Exception:
-                            pass
-            except redis.exceptions.ConnectionError:
+                        except (ValueError, TypeError):
+                            continue  # malformed pub/sub payload
+            except RedisConnectionError:
                 await asyncio.sleep(2)
 
-    async def connection_checker():
+    async def connection_checker() -> None:
         try:
             while True:
                 await websocket.receive()
@@ -60,9 +74,8 @@ async def stream_logs(websocket: WebSocket, task_id: str, last_seq: int = -1):
     reader_task = asyncio.create_task(redis_reader())
     checker_task = asyncio.create_task(connection_checker())
 
-    done, pending = await asyncio.wait(
-        [reader_task, checker_task],
-        return_when=asyncio.FIRST_COMPLETED
+    _done, pending = await asyncio.wait(
+        [reader_task, checker_task], return_when=asyncio.FIRST_COMPLETED
     )
 
     for task in pending:
@@ -72,13 +85,40 @@ async def stream_logs(websocket: WebSocket, task_id: str, last_seq: int = -1):
     await r.close()
 
 
-@router.websocket("/terminal")
-async def terminal(websocket: WebSocket):
+def terminal_refusal(websocket: WebSocket) -> str | None:
     """
-    Interactive terminal WebSocket.
+    The web terminal runs arbitrary shell commands on the host as the API's
+    user. It is refused unless explicitly enabled, the client is on loopback,
+    and (when API_KEY is configured) the key is presented.
+    Returns the refusal reason, or None if the connection is allowed.
+    """
+    if os.getenv(TERMINAL_ENV_FLAG) != "1":
+        return f"web terminal is disabled (set {TERMINAL_ENV_FLAG}=1)"
+    host = websocket.client.host if websocket.client else ""
+    if host not in _LOOPBACK:
+        return "web terminal only accepts loopback connections"
+    if settings.API_KEY:
+        presented = websocket.headers.get("x-api-key") or websocket.query_params.get(
+            "api_key", ""
+        )
+        if not hmac.compare_digest(presented, settings.API_KEY):
+            return "missing or invalid API key"
+    return None
+
+
+@router.websocket("/terminal")
+async def terminal(websocket: WebSocket) -> None:
+    """
+    Interactive terminal WebSocket (development only, disabled by default).
     Client sends: {"cmd": "ls -la"}
     Server streams back lines: {"type": "stdout"|"stderr"|"exit", "data": "..."}
     """
+    reason = terminal_refusal(websocket)
+    if reason:
+        logger.warning("refused /ws/terminal connection: %s", reason)
+        await websocket.close(code=_POLICY_VIOLATION, reason=reason)
+        return
+    logger.warning("web terminal session opened: commands run on the host unsandboxed")
     await websocket.accept()
     cwd = TERMINAL_CWD
     os.makedirs(cwd, exist_ok=True)
@@ -89,7 +129,7 @@ async def terminal(websocket: WebSocket):
             try:
                 payload = json.loads(msg)
                 raw_cmd = payload.get("cmd", "").strip()
-            except Exception:
+            except (ValueError, AttributeError):
                 raw_cmd = msg.strip()
 
             if not raw_cmd:
@@ -104,9 +144,16 @@ async def terminal(websocket: WebSocket):
                 new_dir = os.path.normpath(new_dir)
                 if os.path.isdir(new_dir):
                     cwd = new_dir
-                    await websocket.send_json({"type": "stdout", "data": f"[cwd] {cwd}\n"})
+                    await websocket.send_json(
+                        {"type": "stdout", "data": f"[cwd] {cwd}\n"}
+                    )
                 else:
-                    await websocket.send_json({"type": "stderr", "data": f"cd: no such directory: {new_dir}\n"})
+                    await websocket.send_json(
+                        {
+                            "type": "stderr",
+                            "data": f"cd: no such directory: {new_dir}\n",
+                        }
+                    )
                 await websocket.send_json({"type": "exit", "data": "0", "cwd": cwd})
                 continue
 
@@ -119,17 +166,25 @@ async def terminal(websocket: WebSocket):
                     cwd=cwd,
                 )
 
-                async def stream_pipe(pipe, kind: str):
+                async def stream_pipe(
+                    pipe: asyncio.StreamReader | None, kind: str
+                ) -> None:
+                    if pipe is None:
+                        return
                     async for line in pipe:
-                        await websocket.send_json({"type": kind, "data": line.decode(errors="replace")})
+                        await websocket.send_json(
+                            {"type": kind, "data": line.decode(errors="replace")}
+                        )
 
                 await asyncio.gather(
                     stream_pipe(proc.stdout, "stdout"),
                     stream_pipe(proc.stderr, "stderr"),
                 )
                 await proc.wait()
-                await websocket.send_json({"type": "exit", "data": str(proc.returncode), "cwd": cwd})
-            except Exception as e:
+                await websocket.send_json(
+                    {"type": "exit", "data": str(proc.returncode), "cwd": cwd}
+                )
+            except OSError as e:
                 await websocket.send_json({"type": "stderr", "data": f"Error: {e}\n"})
                 await websocket.send_json({"type": "exit", "data": "1", "cwd": cwd})
 

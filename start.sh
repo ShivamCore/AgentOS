@@ -13,6 +13,12 @@ echo "📂 Working directory: $REPO"
 echo "🐍 PYTHONPATH: $PYTHONPATH"
 echo ""
 
+# ── Activate virtual environment ─────────────────────────────────────────────
+if [ -f "$REPO/.venv/bin/activate" ]; then
+  source "$REPO/.venv/bin/activate"
+  echo "✅ Activated .venv (Python $(python3 --version))"
+fi
+
 # ── Ollama stability settings ────────────────────────────────────────────────
 # Prevents model unload between tasks (eliminates restart-loop on long queues)
 export OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-30m}"
@@ -42,12 +48,12 @@ sleep 1
 
 # ── Run schema migration (safe / idempotent) ─────────────────────────────────
 echo "🗄️  Running DB migration..."
-python db_migrate.py
+python3 db_migrate.py
 echo ""
 
 # ── Backend ──────────────────────────────────────────────────────────────────
 echo "🚀 Starting FastAPI backend on :8000 ..."
-uvicorn backend.api.main:app --host 0.0.0.0 --port 8000 --reload &
+uvicorn backend.api.main:app --host "${AGENTOS_HOST:-127.0.0.1}" --port 8000 --reload &
 BACKEND_PID=$!
 
 sleep 2

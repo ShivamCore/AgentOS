@@ -11,9 +11,8 @@ Usage:
 
 from __future__ import annotations
 
-from typing import Optional
-
 import typer
+
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
@@ -30,6 +29,8 @@ _STATUS_COLOR = {
     "COMPLETED": "green",
     "PARTIAL_SUCCESS": "yellow",
     "FAILED": "red",
+    "TIMED_OUT": "red",
+    "CANCELLED": "magenta",
 }
 
 
@@ -38,8 +39,12 @@ def _truncate(s: str, n: int = 60) -> str:
 
 
 def list_tasks(
-    limit: int = typer.Option(20, "--limit", "-n", help="Number of tasks to show (max 50)."),
-    filter_status: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status: COMPLETED | FAILED | RUNNING"),
+    limit: int = typer.Option(
+        20, "--limit", "-n", help="Number of tasks to show (max 50)."
+    ),
+    filter_status: str | None = typer.Option(
+        None, "--status", "-s", help="Filter by status: COMPLETED | FAILED | RUNNING"
+    ),
 ) -> None:
     """List the most recent AgentOS tasks."""
 
@@ -47,10 +52,12 @@ def list_tasks(
         tasks = client.list_tasks(limit=min(limit, 50))
     except APIError as e:
         console.print(f"[red]✗ {e.detail}[/red]")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
     if filter_status:
-        tasks = [t for t in tasks if t.get("status", "").upper() == filter_status.upper()]
+        tasks = [
+            t for t in tasks if t.get("status", "").upper() == filter_status.upper()
+        ]
 
     if not tasks:
         console.print("[dim]No tasks found.[/dim]")
@@ -82,5 +89,7 @@ def list_tasks(
 
     console.print()
     console.print(table)
-    console.print(f"\n[dim]{len(tasks)} task(s) shown. Use [cyan]agentos status <task_id>[/cyan] for details.[/dim]")
+    console.print(
+        f"\n[dim]{len(tasks)} task(s) shown. Use [cyan]agentos status <task_id>[/cyan] for details.[/dim]"
+    )
     console.print()

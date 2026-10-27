@@ -14,7 +14,14 @@ class TestTaskStatusEnum:
         """Every documented lifecycle state must exist in TaskStatus."""
         from backend.models.sql_models import TaskStatus
 
-        expected = {"CREATED", "PLANNED", "RUNNING", "PARTIAL_SUCCESS", "FAILED", "COMPLETED"}
+        expected = {
+            "CREATED",
+            "PLANNED",
+            "RUNNING",
+            "PARTIAL_SUCCESS",
+            "FAILED",
+            "COMPLETED",
+        }
         actual = {s.value for s in TaskStatus}
         missing = expected - actual
         assert not missing, f"Missing TaskStatus values: {missing}"
@@ -27,13 +34,13 @@ class TestTaskStatusEnum:
         from backend.models.sql_models import TaskStatus
 
         for status in TaskStatus:
-            assert status.value == status.value.upper(), \
+            assert status.value == status.value.upper(), (
                 f"TaskStatus.{status.name}.value={status.value!r} is not uppercase"
+            )
 
     def test_status_is_str_enum(self):
         """TaskStatus must be a str enum so it compares equal to raw strings."""
         from backend.models.sql_models import TaskStatus
-        import enum
 
         assert issubclass(TaskStatus, str), "TaskStatus must be (str, enum.Enum)"
         assert isinstance(TaskStatus.CREATED, str)
@@ -42,10 +49,19 @@ class TestTaskStatusEnum:
 
 class TestNodeStatusEnum:
     def test_all_expected_node_statuses_present(self):
-        """Every node lifecycle state must exist in NodeStatus."""
+        """Every node lifecycle state must exist in NodeStatus (agent.lifecycle.NodeState)."""
         from backend.models.sql_models import NodeStatus
 
-        expected = {"CREATED", "RUNNING", "COMPLETED", "FAILED"}
+        expected = {
+            "PENDING",
+            "READY",
+            "RUNNING",
+            "COMPLETED",
+            "FAILED",
+            "TIMED_OUT",
+            "CANCELLED",
+            "BLOCKED",
+        }
         actual = {s.value for s in NodeStatus}
         missing = expected - actual
         assert not missing, f"Missing NodeStatus values: {missing}"
@@ -55,8 +71,9 @@ class TestNodeStatusEnum:
         from backend.models.sql_models import NodeStatus
 
         for status in NodeStatus:
-            assert status.value == status.value.upper(), \
+            assert status.value == status.value.upper(), (
                 f"NodeStatus.{status.name}.value must be uppercase"
+            )
 
 
 class TestTaskRecordModel:
@@ -68,9 +85,7 @@ class TestTaskRecordModel:
         from backend.models.sql_models import TaskRecord
 
         indexed_cols = {
-            col.name
-            for idx in TaskRecord.__table__.indexes
-            for col in idx.columns
+            col.name for idx in TaskRecord.__table__.indexes for col in idx.columns
         }
         assert "status" in indexed_cols or any(
             col.index for col in TaskRecord.__table__.columns if col.name == "status"
@@ -123,17 +138,26 @@ class TestLogRecordModel:
     def test_log_record_has_log_type(self):
         """LogRecord must have a log_type column."""
         from backend.models.sql_models import LogRecord
+
         assert "log_type" in LogRecord.__table__.columns
 
 
 class TestAllModelsHaveRepr:
-    @pytest.mark.parametrize("model_name", [
-        "TaskRecord", "TaskNodeRecord", "LogRecord", "FileEditRecord", "AgentSelectionLogRecord"
-    ])
+    @pytest.mark.parametrize(
+        "model_name",
+        [
+            "TaskRecord",
+            "TaskNodeRecord",
+            "LogRecord",
+            "FileEditRecord",
+            "AgentSelectionLogRecord",
+        ],
+    )
     def test_model_has_repr(self, model_name):
         """Every ORM model must define __repr__ for debuggability."""
         import backend.models.sql_models as models_mod
 
         model_cls = getattr(models_mod, model_name)
-        assert "__repr__" in model_cls.__dict__, \
+        assert "__repr__" in model_cls.__dict__, (
             f"{model_name} must define a custom __repr__"
+        )

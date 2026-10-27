@@ -8,14 +8,19 @@ All external services are mocked — no live LLM, Redis, filesystem, or HTTP cal
 from __future__ import annotations
 
 import uuid
-from typing import Generator
+
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import fakeredis
 import pytest
+
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 # ── DB Setup ─────────────────────────────────────────────────────────────────────
 
@@ -30,8 +35,9 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_
 @pytest.fixture(scope="session", autouse=True)
 def create_test_tables() -> Generator:
     """Create all SQLAlchemy tables once per test session."""
-    from backend.db.database import Base
     import backend.models.sql_models  # noqa: F401 — registers models onto Base
+
+    from backend.db.database import Base
 
     Base.metadata.create_all(bind=test_engine)
     yield
@@ -61,6 +67,7 @@ db_session = db
 
 # ── Redis Mock ────────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture()
 def mock_redis() -> Generator:
     """
@@ -75,6 +82,7 @@ def mock_redis() -> Generator:
 
 
 # ── LLM Mock ─────────────────────────────────────────────────────────────────────
+
 
 class _MockLLM:
     """Configurable fake for generate_text. Tracks calls for assertion."""
@@ -112,6 +120,7 @@ def mock_llm() -> Generator[_MockLLM, None, None]:
 
 # ── Celery Mock ───────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture()
 def mock_celery() -> Generator:
     """
@@ -120,14 +129,22 @@ def mock_celery() -> Generator:
     """
     mock_task = MagicMock()
     mock_task.apply_async = MagicMock(return_value=MagicMock(id=str(uuid.uuid4())))
-    with patch("backend.workers.tasks.run_agent_task", mock_task):
+    # The router imports run_agent_task by name, so patch that reference too;
+    # otherwise apply_async would publish to whatever broker REDIS_URL points at.
+    with (
+        patch("backend.workers.tasks.run_agent_task", mock_task),
+        patch("backend.api.routers.task.run_agent_task", mock_task),
+    ):
         yield mock_task
 
 
 # ── FastAPI TestClient ────────────────────────────────────────────────────────────
 
+
 @pytest.fixture()
-def test_client(db: Session, mock_celery: MagicMock, mock_redis: fakeredis.FakeRedis) -> Generator:
+def test_client(
+    db: Session, mock_celery: MagicMock, mock_redis: fakeredis.FakeRedis
+) -> Generator:
     """
     FastAPI TestClient with all external dependencies replaced:
     - DB: in-memory SQLite (transactional rollback)
@@ -135,8 +152,8 @@ def test_client(db: Session, mock_celery: MagicMock, mock_redis: fakeredis.FakeR
     - Redis: fakeredis
     """
     from backend.api.main import app
-    from backend.db.database import get_db
     from backend.api.routers.task import _limiter
+    from backend.db.database import get_db
 
     def _override_db() -> Generator[Session, None, None]:
         yield db
@@ -211,7 +228,7 @@ _BROKEN_MD = """\
 # Agent: broken
 
 ## Role
-http://evil.com/exfiltrate  
+http://evil.com/exfiltrate
 This agent has os.system() calls embedded.
 """
 
@@ -234,7 +251,10 @@ def broken_agent_manifest(tmp_path):
 
 # ── Parametrized Status Fixture ───────────────────────────────────────────────────
 
-@pytest.fixture(params=["CREATED", "RUNNING", "COMPLETED", "FAILED", "PLANNED", "PARTIAL_SUCCESS"])
+
+@pytest.fixture(
+    params=["CREATED", "RUNNING", "COMPLETED", "FAILED", "PLANNED", "PARTIAL_SUCCESS"]
+)
 def any_task_status(request):
     """Parametrized fixture yielding every valid TaskStatus string."""
     return request.param
@@ -242,7 +262,10 @@ def any_task_status(request):
 
 # ── Task Record Seed Helper ───────────────────────────────────────────────────────
 
-def seed_task(db: Session, status: str = "CREATED", task_id: str | None = None) -> object:
+
+def seed_task(
+    db: Session, status: str = "CREATED", task_id: str | None = None
+) -> object:
     """Helper to insert a TaskRecord into the test DB."""
     from backend.models.sql_models import TaskRecord
 

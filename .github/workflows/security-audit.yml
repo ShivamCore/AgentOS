@@ -240,16 +240,19 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Run Trivy on built image
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: agentos:scan-${{ github.sha }}
           format: sarif
           output: trivy-image.sarif
           severity: HIGH,CRITICAL
+          # Fail only on findings that have a fix available (base-image CVEs
+          # without an upstream fix would otherwise block every build).
+          ignore-unfixed: true
           exit-code: "1"
 
       - name: Upload Trivy results to Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-image.sarif

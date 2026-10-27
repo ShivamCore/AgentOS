@@ -13,16 +13,15 @@ REGRESSION PROOF: These tests prove the backpressure bug is dead.
 from __future__ import annotations
 
 import uuid
-from unittest.mock import MagicMock, patch
+
+from unittest.mock import patch
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from tests.conftest import seed_task
 
-
 # ── Backpressure tests ────────────────────────────────────────────────────────────
+
 
 class TestBackpressure:
     """
@@ -38,7 +37,6 @@ class TestBackpressure:
         for _ in range(3):
             seed_task(db, status="CREATED")
 
-        from backend.api.routers.task import _check_backpressure
         from backend.config import settings
 
         original_limit = settings.MAX_CONCURRENT_TASKS
@@ -50,12 +48,16 @@ class TestBackpressure:
                 mock_settings.MAX_CONCURRENT_TASKS = 100
                 # We verify by calling with a very high limit — if count was 0 the
                 # function would never raise regardless. We check the internal count here.
-                from sqlalchemy import func
                 from backend.models.sql_models import TaskRecord
-                count = db.query(TaskRecord).filter(
-                    TaskRecord.status.in_(["CREATED", "PLANNED", "RUNNING"])
-                ).count()
-                assert count == 3, f"Expected 3 active tasks but found {count} — case mismatch?"
+
+                count = (
+                    db.query(TaskRecord)
+                    .filter(TaskRecord.status.in_(["CREATED", "PLANNED", "RUNNING"]))
+                    .count()
+                )
+                assert count == 3, (
+                    f"Expected 3 active tasks but found {count} — case mismatch?"
+                )
         finally:
             settings.MAX_CONCURRENT_TASKS = original_limit
 
@@ -69,13 +71,18 @@ class TestBackpressure:
         with patch("backend.api.routers.task.settings") as mock_cfg:
             mock_cfg.MAX_CONCURRENT_TASKS = 2
             mock_cfg.TASK_TIMEOUT_SECONDS = 600
-            response = test_client.post("/tasks/create", json={
-                "title": "New task",
-                "description": "Should be rejected by backpressure",
-                "task_type": "build_app",
-            })
+            response = test_client.post(
+                "/tasks/create",
+                json={
+                    "title": "New task",
+                    "description": "Should be rejected by backpressure",
+                    "task_type": "build_app",
+                },
+            )
 
-        assert response.status_code == 429, f"Expected 429 but got {response.status_code}"
+        assert response.status_code == 429, (
+            f"Expected 429 but got {response.status_code}"
+        )
         assert "Queue saturated" in response.json()["detail"]
 
     def test_backpressure_allows_when_under_limit(self, db, test_client, mock_llm):
@@ -84,14 +91,18 @@ class TestBackpressure:
         """
         seed_task(db, status="CREATED")
 
-        response = test_client.post("/tasks/create", json={
-            "title": "Allowed task",
-            "description": "Within the task limit, should be accepted",
-            "task_type": "fix_bug",
-        })
+        response = test_client.post(
+            "/tasks/create",
+            json={
+                "title": "Allowed task",
+                "description": "Within the task limit, should be accepted",
+                "task_type": "fix_bug",
+            },
+        )
 
-        assert response.status_code in (200, 201, 202), \
+        assert response.status_code in (200, 201, 202), (
             f"Expected 2xx but got {response.status_code}: {response.text}"
+        )
 
     def test_backpressure_ignores_completed_tasks(self, db, test_client, mock_llm):
         """
@@ -106,14 +117,18 @@ class TestBackpressure:
         with patch("backend.api.routers.task.settings") as mock_cfg:
             mock_cfg.MAX_CONCURRENT_TASKS = 3
             mock_cfg.TASK_TIMEOUT_SECONDS = 600
-            response = test_client.post("/tasks/create", json={
-                "title": "Post completed tasks",
-                "description": "Should not be blocked by inactive tasks",
-                "task_type": "create_api",
-            })
+            response = test_client.post(
+                "/tasks/create",
+                json={
+                    "title": "Post completed tasks",
+                    "description": "Should not be blocked by inactive tasks",
+                    "task_type": "create_api",
+                },
+            )
 
-        assert response.status_code in (200, 201, 202), \
+        assert response.status_code in (200, 201, 202), (
             f"Completed/failed tasks must not block new submissions, got {response.status_code}"
+        )
 
     def test_backpressure_counts_running_and_planned(self, db, test_client):
         """RUNNING and PLANNED tasks must count toward the limit, not just CREATED."""
@@ -121,13 +136,17 @@ class TestBackpressure:
         seed_task(db, status="PLANNED")
 
         from backend.models.sql_models import TaskRecord
-        count = db.query(TaskRecord).filter(
-            TaskRecord.status.in_(["CREATED", "PLANNED", "RUNNING"])
-        ).count()
+
+        count = (
+            db.query(TaskRecord)
+            .filter(TaskRecord.status.in_(["CREATED", "PLANNED", "RUNNING"]))
+            .count()
+        )
         assert count == 2
 
 
 # ── Response model validation ─────────────────────────────────────────────────────
+
 
 class TestEndpointContracts:
     """Verify every endpoint has response_model, status_code, and tags configured."""
@@ -149,20 +168,26 @@ class TestEndpointContracts:
 
     def test_task_create_returns_202(self, test_client, mock_llm):
         """POST /tasks/create must return 202 Accepted on valid input."""
-        response = test_client.post("/tasks/create", json={
-            "title": "Test Task",
-            "description": "A valid description",
-            "task_type": "build_app",
-        })
+        response = test_client.post(
+            "/tasks/create",
+            json={
+                "title": "Test Task",
+                "description": "A valid description",
+                "task_type": "build_app",
+            },
+        )
         assert response.status_code == 202
 
     def test_task_create_response_has_task_id(self, test_client, mock_llm):
         """POST /tasks/create response must contain task_id and status fields."""
-        response = test_client.post("/tasks/create", json={
-            "title": "Test Task",
-            "description": "Check response shape",
-            "task_type": "fix_bug",
-        })
+        response = test_client.post(
+            "/tasks/create",
+            json={
+                "title": "Test Task",
+                "description": "Check response shape",
+                "task_type": "fix_bug",
+            },
+        )
         data = response.json()
         assert "task_id" in data
         assert "status" in data
@@ -194,66 +219,87 @@ class TestEndpointContracts:
 
 # ── Input validation ──────────────────────────────────────────────────────────────
 
+
 class TestInputValidation:
     """Verify Pydantic validation rejects invalid inputs at the API boundary."""
 
-    @pytest.mark.parametrize("task_type", ["invalid_type", "hack_system", "drop_table", ""])
+    @pytest.mark.parametrize(
+        "task_type", ["invalid_type", "hack_system", "drop_table", ""]
+    )
     def test_invalid_task_type_returns_422(self, test_client, task_type):
         """Invalid task_type must be rejected with 422 Unprocessable Entity."""
-        response = test_client.post("/tasks/create", json={
-            "title": "Test",
-            "description": "Valid description",
-            "task_type": task_type,
-        })
+        response = test_client.post(
+            "/tasks/create",
+            json={
+                "title": "Test",
+                "description": "Valid description",
+                "task_type": task_type,
+            },
+        )
         assert response.status_code == 422
 
     def test_too_short_title_returns_422(self, test_client):
         """Title shorter than min_length=3 must be rejected."""
-        response = test_client.post("/tasks/create", json={
-            "title": "AB",
-            "description": "Valid description",
-            "task_type": "fix_bug",
-        })
+        response = test_client.post(
+            "/tasks/create",
+            json={
+                "title": "AB",
+                "description": "Valid description",
+                "task_type": "fix_bug",
+            },
+        )
         assert response.status_code == 422
 
     def test_invalid_risk_level_in_constraints_returns_422(self, test_client):
         """risk_level outside (safe|balanced|aggressive) must be rejected."""
-        response = test_client.post("/tasks/create", json={
-            "title": "Test task",
-            "description": "Valid description",
-            "task_type": "build_app",
-            "constraints": {"risk_level": "ULTRA_DANGEROUS"},
-        })
+        response = test_client.post(
+            "/tasks/create",
+            json={
+                "title": "Test task",
+                "description": "Valid description",
+                "task_type": "build_app",
+                "constraints": {"risk_level": "ULTRA_DANGEROUS"},
+            },
+        )
         assert response.status_code == 422
 
     def test_idempotency_key_deduplicates(self, test_client, db, mock_llm):
         """Submitting the same idempotency_key twice must return the first task_id."""
         key = str(uuid.uuid4())
-        r1 = test_client.post("/tasks/create", json={
-            "title": "First task",
-            "description": "First submission",
-            "task_type": "build_app",
-            "idempotency_key": key,
-        })
-        r2 = test_client.post("/tasks/create", json={
-            "title": "Second task",
-            "description": "Duplicate submission",
-            "task_type": "build_app",
-            "idempotency_key": key,
-        })
+        r1 = test_client.post(
+            "/tasks/create",
+            json={
+                "title": "First task",
+                "description": "First submission",
+                "task_type": "build_app",
+                "idempotency_key": key,
+            },
+        )
+        r2 = test_client.post(
+            "/tasks/create",
+            json={
+                "title": "Second task",
+                "description": "Duplicate submission",
+                "task_type": "build_app",
+                "idempotency_key": key,
+            },
+        )
 
         assert r1.status_code in (200, 201, 202)
         assert r2.status_code in (200, 201, 202)
-        assert r1.json()["task_id"] == r2.json()["task_id"], "Idempotency key must deduplicate"
+        assert r1.json()["task_id"] == r2.json()["task_id"], (
+            "Idempotency key must deduplicate"
+        )
         assert r2.json()["deduplicated"] is True
 
 
 # ── Planner prompt construction ────────────────────────────────────────────────────
 
+
 class TestPlannerPromptBuilder:
     def test_build_planner_prompt_contains_title(self):
         """_build_planner_prompt must include the task title in the output."""
-        from backend.api.routers.task import _build_planner_prompt, TaskInput
+        from backend.api.routers.task import TaskInput, _build_planner_prompt
 
         task = TaskInput(
             title="My Stripe Handler",
@@ -265,18 +311,22 @@ class TestPlannerPromptBuilder:
 
     def test_build_planner_prompt_contains_type(self):
         """_build_planner_prompt must include the task_type."""
-        from backend.api.routers.task import _build_planner_prompt, TaskInput
+        from backend.api.routers.task import TaskInput, _build_planner_prompt
 
-        task = TaskInput(title="Test Task", description="Desc desc desc", task_type="fix_bug")
+        task = TaskInput(
+            title="Test Task", description="Desc desc desc", task_type="fix_bug"
+        )
         prompt = _build_planner_prompt(task)
         assert "fix_bug" in prompt
 
     def test_build_planner_prompt_contains_tech_stack(self):
         """If tech_stack is provided it must appear in the prompt."""
-        from backend.api.routers.task import _build_planner_prompt, TaskInput
+        from backend.api.routers.task import TaskInput, _build_planner_prompt
 
         task = TaskInput(
-            title="Test Task", description="Desc desc desc", task_type="build_app",
+            title="Test Task",
+            description="Desc desc desc",
+            task_type="build_app",
             tech_stack=["React", "FastAPI"],
         )
         prompt = _build_planner_prompt(task)
@@ -285,7 +335,11 @@ class TestPlannerPromptBuilder:
 
     def test_build_planner_prompt_is_deterministic(self):
         """Same input must always produce the same prompt (deterministic transform)."""
-        from backend.api.routers.task import _build_planner_prompt, TaskInput
+        from backend.api.routers.task import TaskInput, _build_planner_prompt
 
-        task = TaskInput(title="T stable", description="Same input each time", task_type="refactor_code")
+        task = TaskInput(
+            title="T stable",
+            description="Same input each time",
+            task_type="refactor_code",
+        )
         assert _build_planner_prompt(task) == _build_planner_prompt(task)

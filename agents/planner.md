@@ -41,13 +41,17 @@ RULES:
 1. `task_id` can be any unique string or "auto_generated".
 2. `step_id` must be unique across the plan.
 3. `dependencies` is a list of `step_id`s that MUST complete before this task can start.
-4. `required_tools` must be selected exclusively from: `file_read`, `file_write`, `terminal`, `git`.
-5. `preferred_agent` must be either `coder`, `debugger`, or `planner`.
-6. Output NOTHING except the exact JSON format without extraneous conversational text.
+4. `required_tools` must be selected exclusively from: `file_read`, `file_write`, `terminal`.
+5. `preferred_agent` must be either `coder` or `debugger`.
+6. Do not add any other fields to a step. Steps that do not depend on each other must not list each other as dependencies, so they can run in parallel.
+7. Output NOTHING except the exact JSON format without extraneous conversational text.
 
 ## Constraints
 - Output NOTHING except the JSON object
 - Split work into at most 10 atomic steps
+
+## Config
+- max_output_tokens: 1024
 
 ## Memory
 - persistent: false

@@ -10,24 +10,38 @@ Usage inside a FastAPI route:
         limiter.check(request)   # raises HTTP 429 if over limit
         ...
 """
-import time
+
+import logging
+
+from typing import Any
+
 import redis as redis_pkg
+
 from fastapi import HTTPException, Request
+
 from backend.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class RateLimiter:
     """Sliding-window counter stored in Redis per client IP."""
 
     def __init__(self) -> None:
-        self._redis = redis_pkg.from_url(settings.REDIS_URL, decode_responses=True)
+        self._redis: Any = redis_pkg.from_url(  # type: ignore[no-untyped-call]
+            settings.REDIS_URL, decode_responses=True
+        )
         self._limit = settings.RATE_LIMIT_RPM
         self._window = 60  # seconds
 
     def _client_key(self, request: Request) -> str:
         # Use X-Forwarded-For if behind a reverse proxy, else remote addr
         forwarded = request.headers.get("X-Forwarded-For")
-        ip = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "unknown")
+        ip = (
+            forwarded.split(",")[0].strip()
+            if forwarded
+            else (request.client.host if request.client else "unknown")
+        )
         return f"rl:{ip}"
 
     def check(self, request: Request) -> None:
@@ -52,5 +66,5 @@ class RateLimiter:
         except HTTPException:
             raise
         except Exception:
-            # If Redis is down, fail open (don't block the user)
-            pass
+            # If Redis is down, fail open (don't block the user); documented in docs/security.md
+            logger.warning("rate limiter unavailable; failing open", exc_info=True)

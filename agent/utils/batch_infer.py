@@ -27,9 +27,13 @@ from __future__ import annotations
 
 import logging
 import time
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -40,11 +44,11 @@ _MAX_WORKERS = int(__import__("os").getenv("BATCH_MAX_WORKERS", "4"))
 class BatchRequest:
     prompt: str
     system_prompt: str = ""
-    model: str = ""          # empty → caller must fill from ModelRouter
+    model: str = ""  # empty → caller must fill from ModelRouter
     temperature: float = 0.2
     max_tokens: int = -1
     task_type: str = "code"  # used for cache TTL selection
-    stream_callback: Optional[Callable[[str], None]] = None
+    stream_callback: Callable[[str], None] | None = None
     # Internal tracking
     _index: int = field(default=0, repr=False)
 
@@ -55,7 +59,7 @@ class BatchResult:
     response: str
     model: str
     latency_ms: int
-    error: Optional[str] = None
+    error: str | None = None
 
     @property
     def success(self) -> bool:
@@ -83,6 +87,7 @@ def batch_infer(
 
     def _run_one(req: BatchRequest) -> BatchResult:
         from agent.llm import generate_text  # local import avoids circular dep
+
         t0 = time.time()
         try:
             response = generate_text(
@@ -117,8 +122,12 @@ def batch_infer(
 
     # Guarantee no None slots (shouldn't happen, but be safe)
     return [
-        r if r is not None else BatchResult(
-            index=i, response="", model="", latency_ms=0, error="missing result"
+        (
+            r
+            if r is not None
+            else BatchResult(
+                index=i, response="", model="", latency_ms=0, error="missing result"
+            )
         )
         for i, r in enumerate(results)
     ]

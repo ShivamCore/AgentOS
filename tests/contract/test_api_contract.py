@@ -16,11 +16,14 @@ from tests.conftest import seed_task
 class TestResponseShapes:
     def test_task_create_response_has_exact_fields(self, test_client):
         """POST /tasks/create must return {task_id, status, deduplicated}."""
-        response = test_client.post("/tasks/create", json={
-            "title": "Contract test task",
-            "description": "Verify shape of response",
-            "task_type": "build_app",
-        })
+        response = test_client.post(
+            "/tasks/create",
+            json={
+                "title": "Contract test task",
+                "description": "Verify shape of response",
+                "task_type": "build_app",
+            },
+        )
         assert response.status_code in (200, 201, 202)
         data = response.json()
         assert "task_id" in data
@@ -64,11 +67,14 @@ class TestResponseShapes:
 class TestStatusStringCasing:
     def test_status_always_uppercase_in_create_response(self, test_client):
         """POST /tasks/create status field must be uppercase."""
-        response = test_client.post("/tasks/create", json={
-            "title": "Case test",
-            "description": "Verifying case contract",
-            "task_type": "fix_bug",
-        })
+        response = test_client.post(
+            "/tasks/create",
+            json={
+                "title": "Case test",
+                "description": "Verifying case contract",
+                "task_type": "fix_bug",
+            },
+        )
         assert response.status_code in (200, 201, 202)
         status = response.json()["status"]
         assert status == status.upper(), f"status {status!r} is not uppercase"
@@ -112,14 +118,18 @@ class TestErrorResponses:
     def test_429_has_detail_field(self, test_client, db):
         """429 Too Many Requests from backpressure must include 'detail'."""
         from unittest.mock import patch
+
         with patch("backend.api.routers.task.settings") as mock_cfg:
             mock_cfg.MAX_CONCURRENT_TASKS = 0
             mock_cfg.TASK_TIMEOUT_SECONDS = 600
-            response = test_client.post("/tasks/create", json={
-                "title": "Overflow",
-                "description": "Should get 429",
-                "task_type": "fix_bug",
-            })
+            response = test_client.post(
+                "/tasks/create",
+                json={
+                    "title": "Overflow",
+                    "description": "Should get 429",
+                    "task_type": "fix_bug",
+                },
+            )
         assert response.status_code == 429
         assert "detail" in response.json()
 

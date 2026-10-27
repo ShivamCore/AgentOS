@@ -8,6 +8,7 @@ Config is created automatically on first run.
 from __future__ import annotations
 
 import os
+
 from pathlib import Path
 
 import yaml
@@ -59,11 +60,15 @@ class Config:
 
     @property
     def api_url(self) -> str:
-        return os.getenv("AGENTOS_API_URL", self._data.get("api_url", _DEFAULTS["api_url"])).rstrip("/")
+        return os.getenv(
+            "AGENTOS_API_URL", self._data.get("api_url", _DEFAULTS["api_url"])
+        ).rstrip("/")
 
     @property
     def default_model(self) -> str:
-        return os.getenv("AGENTOS_MODEL", self._data.get("default_model", _DEFAULTS["default_model"]))
+        return os.getenv(
+            "AGENTOS_MODEL", self._data.get("default_model", _DEFAULTS["default_model"])
+        )
 
     @property
     def default_task_type(self) -> str:
@@ -71,11 +76,17 @@ class Config:
 
     @property
     def poll_interval(self) -> float:
-        return float(self._data.get("poll_interval_seconds", _DEFAULTS["poll_interval_seconds"]))
+        return float(
+            self._data.get("poll_interval_seconds", _DEFAULTS["poll_interval_seconds"])
+        )
 
     @property
     def request_timeout(self) -> int:
-        return int(self._data.get("request_timeout_seconds", _DEFAULTS["request_timeout_seconds"]))
+        return int(
+            self._data.get(
+                "request_timeout_seconds", _DEFAULTS["request_timeout_seconds"]
+            )
+        )
 
     @property
     def config_file(self) -> Path:

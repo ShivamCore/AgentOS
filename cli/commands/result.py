@@ -10,6 +10,7 @@ Usage:
 from __future__ import annotations
 
 import typer
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.syntax import Syntax
@@ -27,7 +28,7 @@ def _display_result(task_id: str, json_out: bool = False) -> None:
         data = client.get_task_result(task_id)
     except APIError as e:
         console.print(f"[red]✗ {e.detail}[/red]")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
     if json_out:
         console.print(Syntax(_json.dumps(data, indent=2), "json", theme="monokai"))
@@ -47,7 +48,9 @@ def _display_result(task_id: str, json_out: bool = False) -> None:
 
     lines = []
     if summary:
-        lines.append(f"[bold]Summary[/bold]\n  {summary}\n  Confidence: [{c_color}]{confidence}%[/{c_color}]")
+        lines.append(
+            f"[bold]Summary[/bold]\n  {summary}\n  Confidence: [{c_color}]{confidence}%[/{c_color}]"
+        )
     if files:
         lines.append("\n[bold]Files modified[/bold]")
         for f in files:
@@ -66,17 +69,21 @@ def _display_result(task_id: str, json_out: bool = False) -> None:
         return
 
     console.print()
-    console.print(Panel(
-        "\n".join(lines),
-        title=f"[bold green]Result Output[/bold green]  [dim]{task_id}[/dim]",
-        border_style="green",
-    ))
+    console.print(
+        Panel(
+            "\n".join(lines),
+            title=f"[bold green]Result Output[/bold green]  [dim]{task_id}[/dim]",
+            border_style="green",
+        )
+    )
     console.print()
 
 
 def result(
     task_id: str = typer.Argument(..., help="Task ID to fetch result for."),
-    json_out: bool = typer.Option(False, "--json", help="Print raw JSON instead of formatted output."),
+    json_out: bool = typer.Option(
+        False, "--json", help="Print raw JSON instead of formatted output."
+    ),
 ) -> None:
     """Display the structured result of a completed task."""
     _display_result(task_id, json_out)
@@ -91,8 +98,24 @@ def retry(
         resp = client.retry_task(task_id)
     except APIError as e:
         console.print(f"[red]✗ {e.detail}[/red]")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
-    console.print(f"[green]✓ Task re-queued[/green]  [dim]{resp.get('task_id', task_id)}[/dim]")
+    console.print(
+        f"[green]✓ Task re-queued[/green]  [dim]{resp.get('task_id', task_id)}[/dim]"
+    )
     console.print(f"  Track: [cyan]agentos status {task_id}[/cyan]")
     console.print()
+
+
+def cancel(
+    task_id: str = typer.Argument(..., help="Task ID to cancel."),
+) -> None:
+    """Request cancellation of a queued or running task."""
+    try:
+        resp = client.cancel_task(task_id)
+    except APIError as e:
+        console.print(f"[red]✗ {e.detail}[/red]")
+        raise typer.Exit(code=1) from e
+    console.print(
+        f"[yellow]⊘ Cancellation requested[/yellow]  [dim]{task_id} (status: {resp.get('status')})[/dim]"
+    )

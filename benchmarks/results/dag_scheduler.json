@@ -1,0 +1,929 @@
+{
+  "benchmark": "dag_scheduler",
+  "timestamp": "2026-10-27T18:21:42.153664+00:00",
+  "environment": {
+    "python": "3.12.13",
+    "platform": "macOS-26.2-arm64-arm-64bit",
+    "machine": "arm64",
+    "cpu_count": 10
+  },
+  "config": {
+    "reps": 5,
+    "nodes": 16,
+    "step_ms": 50.0,
+    "workers": [
+      1,
+      2,
+      4,
+      8
+    ]
+  },
+  "results": [
+    {
+      "workload": "wide",
+      "nodes": 16,
+      "max_workers": 1,
+      "wall_s": {
+        "median": 0.8633160829776898,
+        "min": 0.8570134170004167,
+        "max": 0.8673108749790117,
+        "p95": 0.8673108749790117,
+        "stdev": 0.0038554872841007723
+      },
+      "ideal_s": 0.8,
+      "overhead_s": {
+        "median": 0.06331608297768976,
+        "min": 0.05701341700041662,
+        "max": 0.06731087497901167,
+        "p95": 0.06731087497901167,
+        "stdev": 0.0038554872841007723
+      },
+      "speedup_vs_1_worker": 1.0,
+      "completion_rate": 1.0,
+      "max_observed_concurrency": 1,
+      "raw": [
+        {
+          "wall_s": 0.8673108749790117,
+          "ideal_s": 0.8,
+          "overhead_s": 0.06731087497901167,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8570134170004167,
+          "ideal_s": 0.8,
+          "overhead_s": 0.05701341700041662,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8644199590198696,
+          "ideal_s": 0.8,
+          "overhead_s": 0.06441995901986952,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8633160829776898,
+          "ideal_s": 0.8,
+          "overhead_s": 0.06331608297768976,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8611042500124313,
+          "ideal_s": 0.8,
+          "overhead_s": 0.06110425001243125,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        }
+      ]
+    },
+    {
+      "workload": "wide",
+      "nodes": 16,
+      "max_workers": 2,
+      "wall_s": {
+        "median": 0.43782208301126957,
+        "min": 0.4274999999906868,
+        "max": 0.4387668750132434,
+        "p95": 0.4387668750132434,
+        "stdev": 0.004731406961003722
+      },
+      "ideal_s": 0.4,
+      "overhead_s": {
+        "median": 0.03782208301126955,
+        "min": 0.027499999990686752,
+        "max": 0.038766875013243385,
+        "p95": 0.038766875013243385,
+        "stdev": 0.004731406961003722
+      },
+      "speedup_vs_1_worker": 1.971842253912688,
+      "completion_rate": 1.0,
+      "max_observed_concurrency": 2,
+      "raw": [
+        {
+          "wall_s": 0.4387668750132434,
+          "ideal_s": 0.4,
+          "overhead_s": 0.038766875013243385,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 2,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.4274999999906868,
+          "ideal_s": 0.4,
+          "overhead_s": 0.027499999990686752,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 2,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.438598082982935,
+          "ideal_s": 0.4,
+          "overhead_s": 0.03859808298293499,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 2,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.43782208301126957,
+          "ideal_s": 0.4,
+          "overhead_s": 0.03782208301126955,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 2,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.4356562089524232,
+          "ideal_s": 0.4,
+          "overhead_s": 0.03565620895242316,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 2,
+          "state": "COMPLETED"
+        }
+      ]
+    },
+    {
+      "workload": "wide",
+      "nodes": 16,
+      "max_workers": 4,
+      "wall_s": {
+        "median": 0.21818954101763666,
+        "min": 0.215469959017355,
+        "max": 0.22143508301815018,
+        "p95": 0.22143508301815018,
+        "stdev": 0.0025566730668416427
+      },
+      "ideal_s": 0.2,
+      "overhead_s": {
+        "median": 0.018189541017636646,
+        "min": 0.015469959017354984,
+        "max": 0.02143508301815017,
+        "p95": 0.02143508301815017,
+        "stdev": 0.0025566730668416427
+      },
+      "speedup_vs_1_worker": 3.956725326755724,
+      "completion_rate": 1.0,
+      "max_observed_concurrency": 4,
+      "raw": [
+        {
+          "wall_s": 0.21705066703725606,
+          "ideal_s": 0.2,
+          "overhead_s": 0.01705066703725605,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 4,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.22143508301815018,
+          "ideal_s": 0.2,
+          "overhead_s": 0.02143508301815017,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 4,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.22099720797268674,
+          "ideal_s": 0.2,
+          "overhead_s": 0.020997207972686727,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 4,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.215469959017355,
+          "ideal_s": 0.2,
+          "overhead_s": 0.015469959017354984,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 4,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.21818954101763666,
+          "ideal_s": 0.2,
+          "overhead_s": 0.018189541017636646,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 4,
+          "state": "COMPLETED"
+        }
+      ]
+    },
+    {
+      "workload": "wide",
+      "nodes": 16,
+      "max_workers": 8,
+      "wall_s": {
+        "median": 0.11078454100061208,
+        "min": 0.10835408297134563,
+        "max": 0.11138658301206306,
+        "p95": 0.11138658301206306,
+        "stdev": 0.001246227218233321
+      },
+      "ideal_s": 0.1,
+      "overhead_s": {
+        "median": 0.010784541000612075,
+        "min": 0.008354082971345628,
+        "max": 0.01138658301206305,
+        "p95": 0.01138658301206305,
+        "stdev": 0.001246227218233321
+      },
+      "speedup_vs_1_worker": 7.792748655906062,
+      "completion_rate": 1.0,
+      "max_observed_concurrency": 8,
+      "raw": [
+        {
+          "wall_s": 0.11138658301206306,
+          "ideal_s": 0.1,
+          "overhead_s": 0.01138658301206305,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 8,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.10835408297134563,
+          "ideal_s": 0.1,
+          "overhead_s": 0.008354082971345628,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 8,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.11136037501273677,
+          "ideal_s": 0.1,
+          "overhead_s": 0.011360375012736762,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 8,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.11078454100061208,
+          "ideal_s": 0.1,
+          "overhead_s": 0.010784541000612075,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 8,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.11053662502672523,
+          "ideal_s": 0.1,
+          "overhead_s": 0.010536625026725227,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 8,
+          "state": "COMPLETED"
+        }
+      ]
+    },
+    {
+      "workload": "chain",
+      "nodes": 16,
+      "max_workers": 1,
+      "wall_s": {
+        "median": 0.8641299579758197,
+        "min": 0.8520829160115682,
+        "max": 0.8712475840002298,
+        "p95": 0.8712475840002298,
+        "stdev": 0.007484083004970768
+      },
+      "ideal_s": 0.8,
+      "overhead_s": {
+        "median": 0.06412995797581966,
+        "min": 0.052082916011568114,
+        "max": 0.07124758400022979,
+        "p95": 0.07124758400022979,
+        "stdev": 0.007484083004970768
+      },
+      "speedup_vs_1_worker": 1.0,
+      "completion_rate": 1.0,
+      "max_observed_concurrency": 1,
+      "raw": [
+        {
+          "wall_s": 0.8712475840002298,
+          "ideal_s": 0.8,
+          "overhead_s": 0.07124758400022979,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8635185420280322,
+          "ideal_s": 0.8,
+          "overhead_s": 0.0635185420280322,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8641299579758197,
+          "ideal_s": 0.8,
+          "overhead_s": 0.06412995797581966,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8694114160025492,
+          "ideal_s": 0.8,
+          "overhead_s": 0.06941141600254919,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8520829160115682,
+          "ideal_s": 0.8,
+          "overhead_s": 0.052082916011568114,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        }
+      ]
+    },
+    {
+      "workload": "chain",
+      "nodes": 16,
+      "max_workers": 2,
+      "wall_s": {
+        "median": 0.8624611669802107,
+        "min": 0.8519159159623086,
+        "max": 0.8663787500117905,
+        "p95": 0.8663787500117905,
+        "stdev": 0.0057653850348422945
+      },
+      "ideal_s": 0.8,
+      "overhead_s": {
+        "median": 0.06246116698021065,
+        "min": 0.0519159159623086,
+        "max": 0.0663787500117905,
+        "p95": 0.0663787500117905,
+        "stdev": 0.0057653850348422945
+      },
+      "speedup_vs_1_worker": 1.0019349172571468,
+      "completion_rate": 1.0,
+      "max_observed_concurrency": 1,
+      "raw": [
+        {
+          "wall_s": 0.8624611669802107,
+          "ideal_s": 0.8,
+          "overhead_s": 0.06246116698021065,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8663787500117905,
+          "ideal_s": 0.8,
+          "overhead_s": 0.0663787500117905,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8655163330258802,
+          "ideal_s": 0.8,
+          "overhead_s": 0.06551633302588011,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8519159159623086,
+          "ideal_s": 0.8,
+          "overhead_s": 0.0519159159623086,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8609919170266949,
+          "ideal_s": 0.8,
+          "overhead_s": 0.06099191702669482,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        }
+      ]
+    },
+    {
+      "workload": "chain",
+      "nodes": 16,
+      "max_workers": 4,
+      "wall_s": {
+        "median": 0.8591024579945952,
+        "min": 0.8531417080084793,
+        "max": 0.8671355420374312,
+        "p95": 0.8671355420374312,
+        "stdev": 0.005682504189216428
+      },
+      "ideal_s": 0.8,
+      "overhead_s": {
+        "median": 0.059102457994595126,
+        "min": 0.05314170800847928,
+        "max": 0.0671355420374311,
+        "p95": 0.0671355420374311,
+        "stdev": 0.005682504189216428
+      },
+      "speedup_vs_1_worker": 1.0058520377103335,
+      "completion_rate": 1.0,
+      "max_observed_concurrency": 1,
+      "raw": [
+        {
+          "wall_s": 0.8671355420374312,
+          "ideal_s": 0.8,
+          "overhead_s": 0.0671355420374311,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8567594999913126,
+          "ideal_s": 0.8,
+          "overhead_s": 0.05675949999131258,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8531417080084793,
+          "ideal_s": 0.8,
+          "overhead_s": 0.05314170800847928,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8644697919953614,
+          "ideal_s": 0.8,
+          "overhead_s": 0.0644697919953614,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8591024579945952,
+          "ideal_s": 0.8,
+          "overhead_s": 0.059102457994595126,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        }
+      ]
+    },
+    {
+      "workload": "chain",
+      "nodes": 16,
+      "max_workers": 8,
+      "wall_s": {
+        "median": 0.8641478340141475,
+        "min": 0.8542585839750245,
+        "max": 0.8666176670230925,
+        "p95": 0.8666176670230925,
+        "stdev": 0.005012460924362296
+      },
+      "ideal_s": 0.8,
+      "overhead_s": {
+        "median": 0.06414783401414748,
+        "min": 0.05425858397502448,
+        "max": 0.06661766702309246,
+        "p95": 0.06661766702309246,
+        "stdev": 0.005012460924362296
+      },
+      "speedup_vs_1_worker": 0.9999793136803401,
+      "completion_rate": 1.0,
+      "max_observed_concurrency": 1,
+      "raw": [
+        {
+          "wall_s": 0.8666176670230925,
+          "ideal_s": 0.8,
+          "overhead_s": 0.06661766702309246,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8645393329788931,
+          "ideal_s": 0.8,
+          "overhead_s": 0.06453933297889303,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8542585839750245,
+          "ideal_s": 0.8,
+          "overhead_s": 0.05425858397502448,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8590749169816263,
+          "ideal_s": 0.8,
+          "overhead_s": 0.05907491698162626,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8641478340141475,
+          "ideal_s": 0.8,
+          "overhead_s": 0.06414783401414748,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        }
+      ]
+    },
+    {
+      "workload": "layered",
+      "nodes": 16,
+      "max_workers": 1,
+      "wall_s": {
+        "median": 0.865966874989681,
+        "min": 0.8469013749854639,
+        "max": 0.8772387079661712,
+        "p95": 0.8772387079661712,
+        "stdev": 0.011227132101185274
+      },
+      "ideal_s": 0.8,
+      "overhead_s": {
+        "median": 0.0659668749896809,
+        "min": 0.04690137498546387,
+        "max": 0.07723870796617116,
+        "p95": 0.07723870796617116,
+        "stdev": 0.011227132101185274
+      },
+      "speedup_vs_1_worker": 1.0,
+      "completion_rate": 1.0,
+      "max_observed_concurrency": 1,
+      "raw": [
+        {
+          "wall_s": 0.8599580830195919,
+          "ideal_s": 0.8,
+          "overhead_s": 0.059958083019591824,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8681251660455018,
+          "ideal_s": 0.8,
+          "overhead_s": 0.06812516604550178,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8469013749854639,
+          "ideal_s": 0.8,
+          "overhead_s": 0.04690137498546387,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.865966874989681,
+          "ideal_s": 0.8,
+          "overhead_s": 0.0659668749896809,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.8772387079661712,
+          "ideal_s": 0.8,
+          "overhead_s": 0.07723870796617116,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 1,
+          "state": "COMPLETED"
+        }
+      ]
+    },
+    {
+      "workload": "layered",
+      "nodes": 16,
+      "max_workers": 2,
+      "wall_s": {
+        "median": 0.43467770802089944,
+        "min": 0.4302480419864878,
+        "max": 0.43668899999465793,
+        "p95": 0.43668899999465793,
+        "stdev": 0.0027157939715978384
+      },
+      "ideal_s": 0.4,
+      "overhead_s": {
+        "median": 0.03467770802089942,
+        "min": 0.030248041986487784,
+        "max": 0.03668899999465791,
+        "p95": 0.03668899999465791,
+        "stdev": 0.0027157939715978384
+      },
+      "speedup_vs_1_worker": 1.9922044747416516,
+      "completion_rate": 1.0,
+      "max_observed_concurrency": 2,
+      "raw": [
+        {
+          "wall_s": 0.43634874996496364,
+          "ideal_s": 0.4,
+          "overhead_s": 0.03634874996496362,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 2,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.43668899999465793,
+          "ideal_s": 0.4,
+          "overhead_s": 0.03668899999465791,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 2,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.43467770802089944,
+          "ideal_s": 0.4,
+          "overhead_s": 0.03467770802089942,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 2,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.4302480419864878,
+          "ideal_s": 0.4,
+          "overhead_s": 0.030248041986487784,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 2,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.4324964589904994,
+          "ideal_s": 0.4,
+          "overhead_s": 0.032496458990499355,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 2,
+          "state": "COMPLETED"
+        }
+      ]
+    },
+    {
+      "workload": "layered",
+      "nodes": 16,
+      "max_workers": 4,
+      "wall_s": {
+        "median": 0.22070524998707697,
+        "min": 0.215496750024613,
+        "max": 0.2208427499863319,
+        "p95": 0.2208427499863319,
+        "stdev": 0.002546713240708347
+      },
+      "ideal_s": 0.2,
+      "overhead_s": {
+        "median": 0.020705249987076957,
+        "min": 0.015496750024612982,
+        "max": 0.0208427499863319,
+        "p95": 0.0208427499863319,
+        "stdev": 0.002546713240708347
+      },
+      "speedup_vs_1_worker": 3.9236351425278113,
+      "completion_rate": 1.0,
+      "max_observed_concurrency": 4,
+      "raw": [
+        {
+          "wall_s": 0.220788958016783,
+          "ideal_s": 0.2,
+          "overhead_s": 0.020788958016782988,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 4,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.2208427499863319,
+          "ideal_s": 0.2,
+          "overhead_s": 0.0208427499863319,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 4,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.2169567079981789,
+          "ideal_s": 0.2,
+          "overhead_s": 0.016956707998178888,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 4,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.215496750024613,
+          "ideal_s": 0.2,
+          "overhead_s": 0.015496750024612982,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 4,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.22070524998707697,
+          "ideal_s": 0.2,
+          "overhead_s": 0.020705249987076957,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 4,
+          "state": "COMPLETED"
+        }
+      ]
+    },
+    {
+      "workload": "layered",
+      "nodes": 16,
+      "max_workers": 8,
+      "wall_s": {
+        "median": 0.2208202919573523,
+        "min": 0.2208020419930108,
+        "max": 0.22098570899106562,
+        "p95": 0.22098570899106562,
+        "stdev": 7.793152410532057e-05
+      },
+      "ideal_s": 0.2,
+      "overhead_s": {
+        "median": 0.0208202919573523,
+        "min": 0.020802041993010778,
+        "max": 0.02098570899106561,
+        "p95": 0.02098570899106561,
+        "stdev": 7.793152410532057e-05
+      },
+      "speedup_vs_1_worker": 3.9215910246007994,
+      "completion_rate": 1.0,
+      "max_observed_concurrency": 4,
+      "raw": [
+        {
+          "wall_s": 0.22080304095288739,
+          "ideal_s": 0.2,
+          "overhead_s": 0.020803040952887375,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 4,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.22098570899106562,
+          "ideal_s": 0.2,
+          "overhead_s": 0.02098570899106561,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 4,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.22082729102112353,
+          "ideal_s": 0.2,
+          "overhead_s": 0.020827291021123517,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 4,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.2208020419930108,
+          "ideal_s": 0.2,
+          "overhead_s": 0.020802041993010778,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 4,
+          "state": "COMPLETED"
+        },
+        {
+          "wall_s": 0.2208202919573523,
+          "ideal_s": 0.2,
+          "overhead_s": 0.0208202919573523,
+          "completed": 16,
+          "nodes": 16,
+          "max_concurrency": 4,
+          "state": "COMPLETED"
+        }
+      ]
+    }
+  ],
+  "failure_handling": {
+    "workload": "wide, 1 root fails once then succeeds on retry",
+    "max_workers": 4,
+    "wall_s_with_retry": {
+      "median": 0.27084500005003065,
+      "min": 0.2663397919968702,
+      "max": 0.2737532919854857,
+      "p95": 0.2737532919854857,
+      "stdev": 0.0030428503416505106
+    },
+    "wall_s_without_failure": {
+      "median": 0.21582329197553918,
+      "min": 0.21357595798326656,
+      "max": 0.2182249590405263,
+      "p95": 0.2182249590405263,
+      "stdev": 0.0017420590122505582
+    },
+    "completion_rate": 1.0,
+    "raw": [
+      {
+        "wall_s": 0.2737532919854857,
+        "ideal_s": 0.25,
+        "overhead_s": 0.023753291985485703,
+        "completed": 16,
+        "nodes": 16,
+        "max_concurrency": 4,
+        "state": "COMPLETED"
+      },
+      {
+        "wall_s": 0.2725871669827029,
+        "ideal_s": 0.25,
+        "overhead_s": 0.02258716698270291,
+        "completed": 16,
+        "nodes": 16,
+        "max_concurrency": 4,
+        "state": "COMPLETED"
+      },
+      {
+        "wall_s": 0.2663397919968702,
+        "ideal_s": 0.25,
+        "overhead_s": 0.01633979199687019,
+        "completed": 16,
+        "nodes": 16,
+        "max_concurrency": 4,
+        "state": "COMPLETED"
+      },
+      {
+        "wall_s": 0.27084500005003065,
+        "ideal_s": 0.25,
+        "overhead_s": 0.02084500005003065,
+        "completed": 16,
+        "nodes": 16,
+        "max_concurrency": 4,
+        "state": "COMPLETED"
+      },
+      {
+        "wall_s": 0.2683193749981001,
+        "ideal_s": 0.25,
+        "overhead_s": 0.018319374998100102,
+        "completed": 16,
+        "nodes": 16,
+        "max_concurrency": 4,
+        "state": "COMPLETED"
+      }
+    ]
+  }
+}

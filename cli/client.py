@@ -7,10 +7,13 @@ All HTTP calls go through here — no direct requests calls in command modules.
 
 from __future__ import annotations
 
+import os
 import sys
+
 from typing import Any
 
 import requests
+
 from requests import Response
 
 from cli.config import cfg
@@ -38,6 +41,11 @@ def _get(path: str, **kwargs: Any) -> dict:
     return r.json()  # type: ignore[no-any-return]
 
 
+def _auth_headers() -> dict[str, str]:
+    key = os.getenv("AGENTOS_API_KEY")
+    return {"X-API-Key": key} if key else {}
+
+
 def _post(path: str, payload: dict, **kwargs: Any) -> dict:
     url = f"{cfg.api_url}{path}"
     try:
@@ -45,6 +53,7 @@ def _post(path: str, payload: dict, **kwargs: Any) -> dict:
             url,
             json=payload,
             timeout=cfg.request_timeout,
+            headers=_auth_headers(),
             **kwargs,
         )
     except requests.ConnectionError:
@@ -65,6 +74,7 @@ def _raise(r: Response) -> None:
 
 
 # ── API methods ───────────────────────────────────────────────────────────────
+
 
 def create_task(
     title: str,
@@ -126,5 +136,13 @@ def retry_task(task_id: str) -> dict:
     return _post(f"/retry/{task_id}", {})
 
 
+def cancel_task(task_id: str) -> dict:
+    return _post(f"/tasks/{task_id}/cancel", {})
+
+
 def health() -> dict:
     return _get("/health")
+
+
+def dependency_health() -> dict:
+    return _get("/health/dependencies")

@@ -14,53 +14,33 @@ from __future__ import annotations
 
 import ast
 import uuid
-from concurrent.futures import Future, ThreadPoolExecutor
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-import pytest
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from unittest.mock import patch
 
 from tests.conftest import seed_task
-
-
-def _make_agent_pool_class_mock():
-    """Return a MagicMock AgentPool class whose submit() runs functions synchronously."""
-    def _submit(fn, *args, **kwargs):
-        f: Future = Future()
-        try:
-            f.set_result(fn(*args, **kwargs))
-        except Exception as exc:
-            f.set_exception(exc)
-        return f
-
-    pool = MagicMock()
-    pool.submit.side_effect = _submit
-    pool.shutdown.return_value = None
-
-    cls = MagicMock()
-    cls.return_value = pool
-    return cls
-
 
 # ─────────────────────────────────────────────────────────────────────────────────
 # BUG 1: Global Mutation in Memory Engine
 # ─────────────────────────────────────────────────────────────────────────────────
 
+
 class TestRegressionGlobalMutationMemoryEngine:
     """
     REGRESSION: agent/memory/engine.py (≈line 41 in original)
-    
+
     The original code had:
         except Exception:
             CHROMA_AVAILABLE = False   # ← mutated module global inside instance method!
-    
+
     In a Celery multi-process setup, this re-assigned the module-global variable
     inside a single worker process's stack frame. While each process has its own
     copy of the module (no cross-process mutation), the original code ALSO kept a
     single process-level global `_global_engine: LocalMemoryEngine = None` that
-    was shared across threads within the same worker. Any concurrent call could 
+    was shared across threads within the same worker. Any concurrent call could
     overwrite it, causing a later thread to get a different workspace's engine.
-    
+
     Fix: @lru_cache per workspace_dir + removed global mutable singleton.
     """
 
@@ -73,6 +53,7 @@ class TestRegressionGlobalMutationMemoryEngine:
         monkeypatch.setattr("agent.memory.engine._CHROMA_AVAILABLE", False)
 
         from agent.memory import engine as eng_mod
+
         eng_mod.get_memory_engine.cache_clear()
 
         engine_a = eng_mod.get_memory_engine(str(tmp_path / "worker_a"))
@@ -105,6 +86,7 @@ class TestRegressionGlobalMutationMemoryEngine:
         monkeypatch.setattr("agent.memory.engine._CHROMA_AVAILABLE", False)
 
         from agent.memory import engine as eng_mod
+
         eng_mod.get_memory_engine.cache_clear()
 
         workspace = str(tmp_path / "shared")
@@ -126,17 +108,18 @@ class TestRegressionGlobalMutationMemoryEngine:
 # BUG 2: Backpressure Status Case Mismatch
 # ─────────────────────────────────────────────────────────────────────────────────
 
+
 class TestRegressionBackpressureStatusCase:
     """
     REGRESSION: backend/api/routers/task.py (_check_backpressure)
-    
+
     The original _check_backpressure queried:
         .filter(TaskRecord.status.in_(["pending", "running"]))
-    
+
     But TaskRecord.status was always stored as uppercase "CREATED", "RUNNING" etc.
     This meant the count was ALWAYS 0, allowing unlimited task submission.
     Under load this caused unbounded queue growth and memory exhaustion.
-    
+
     Fix: Changed query to use uppercase status strings matching actual DB values.
     """
 
@@ -151,9 +134,11 @@ class TestRegressionBackpressureStatusCase:
         seed_task(db, status="RUNNING")
         seed_task(db, status="PLANNED")
 
-        count = db.query(TaskRecord).filter(
-            TaskRecord.status.in_(["CREATED", "PLANNED", "RUNNING"])
-        ).count()
+        count = (
+            db.query(TaskRecord)
+            .filter(TaskRecord.status.in_(["CREATED", "PLANNED", "RUNNING"]))
+            .count()
+        )
 
         assert count == 3, (
             f"REGRESSION BUG 2: Backpressure query must find uppercase status rows. "
@@ -165,7 +150,13 @@ class TestRegressionBackpressureStatusCase:
         """
         AST-level proof: scan task.py router for lowercase status literals.
         """
-        path = Path(__file__).parent.parent.parent / "backend" / "api" / "routers" / "task.py"
+        path = (
+            Path(__file__).parent.parent.parent
+            / "backend"
+            / "api"
+            / "routers"
+            / "task.py"
+        )
         source = path.read_text()
         tree = ast.parse(source)
 
@@ -177,8 +168,8 @@ class TestRegressionBackpressureStatusCase:
                     violations.append((node.lineno, node.value))
 
         assert violations == [], (
-            f"REGRESSION BUG 2: Found lowercase status literals in task router:\n"
-            + "\n".join(f"  line {l}: {v!r}" for l, v in violations)
+            "REGRESSION BUG 2: Found lowercase status literals in task router:\n"
+            + "\n".join(f"  line {lineno}: {v!r}" for lineno, v in violations)
         )
 
     def test_REGRESSION_backpressure_429_when_limit_reached(self, db, test_client):
@@ -192,11 +183,14 @@ class TestRegressionBackpressureStatusCase:
 
             seed_task(db, status="CREATED")
 
-            response = test_client.post("/tasks/create", json={
-                "title": "Overflow",
-                "description": "Should be blocked",
-                "task_type": "fix_bug",
-            })
+            response = test_client.post(
+                "/tasks/create",
+                json={
+                    "title": "Overflow",
+                    "description": "Should be blocked",
+                    "task_type": "fix_bug",
+                },
+            )
 
         assert response.status_code == 429, (
             f"REGRESSION BUG 2: Expected 429 when queue full but got {response.status_code}. "
@@ -208,116 +202,88 @@ class TestRegressionBackpressureStatusCase:
 # BUG 3: node_callback Argument Count
 # ─────────────────────────────────────────────────────────────────────────────────
 
+
 class TestRegressionNodeCallbackArgCount:
     """
     REGRESSION: agent/planner/executor.py (node_callback call sites)
-    
+
     The original code called:
         self.node_callback(node.step_id, "COMPLETED")   ← 2 args ✓  (some call sites)
         ... but the lambda in tasks.py was:
         node_callback=lambda nid, ns: _update_node(task_id, nid, ns)  ← 2 args ✓
-    
+
     However, the failed future handler did NOT call node_callback at all —
     failed nodes were silently dropped from the futures map without any status
     update. This meant failed nodes remained in "running" state indefinitely.
-    
+
     Fix: Failed futures now call node_callback(node.step_id, "FAILED") and
     log the exception.
     """
 
     def test_REGRESSION_node_callback_arg_count(self, tmp_path):
-        """
-        Core regression proof: a strict 2-arg function passed as node_callback
-        must never raise TypeError during execution.
-        """
-        errors = []
+        """A strict 2-arg node_callback must never raise TypeError during execution."""
+        from agent.planner.executor import DAGOrchestrator
+        from agent.planner.graph import StepNode, TaskGraph
+        from agent.planner.scheduler import StepOutcome
+
+        calls = []
 
         def strict_two_arg_callback(node_id: str, status: str) -> None:
-            """Will raise TypeError if called with wrong number of args."""
-            pass  # If we get here, signature is correct
+            calls.append((node_id, status))
 
-        with (
-            patch("agent.planner.executor.AgentPool", new=_make_agent_pool_class_mock()),
-            patch("agent.planner.executor.get_memory_engine"),
-            patch("agent.planner.executor.execute_markdown_agent",
-                  return_value={"success": True, "stdout": "ok", "stderr": ""}),
-            patch("agent.planner.executor.get_agent",
-                  return_value=__import__("agent.selector", fromlist=["SelectionResult"]).SelectionResult("coder", 0.9, "test", None)),
-            patch("agent.planner.executor.extract_json_payload",
-                  return_value={"files": [], "commands": [], "action": "patch_file", "error": None}),
-            patch("agent.planner.executor.execute_step",
-                  return_value={"success": True, "stdout": "done", "stderr": ""}),
-        ):
-            from agent.planner.executor import DAGOrchestrator
-            from agent.planner.graph import TaskGraph, StepNode
-
-            orch = DAGOrchestrator(
-                workspace_dir=str(tmp_path),
-                task_id="reg-t3",
-                max_workers=1,
-                node_callback=strict_two_arg_callback,
-            )
-            graph = TaskGraph(task_id="reg-t3")
-            node = StepNode(step_id="s0", description="Test", required_tools=[], dependencies=[])
-            graph.nodes["s0"] = node
-            orch.run_graph(graph)  # Must not raise TypeError
-
-        assert errors == [], f"node_callback raised errors: {errors}"
+        orch = DAGOrchestrator(
+            workspace_dir=str(tmp_path),
+            task_id="reg-t3",
+            max_workers=1,
+            node_callback=strict_two_arg_callback,
+            step_runner=lambda node, ctx: StepOutcome(True),
+        )
+        graph = TaskGraph(task_id="reg-t3")
+        graph.nodes["s0"] = StepNode(step_id="s0", description="Test")
+        orch.run_graph(graph)
+        assert calls[-1] == ("s0", "COMPLETED")
 
     def test_REGRESSION_failed_futures_update_node_status(self, tmp_path):
-        """
-        Regression: failed futures must NOT be silently discarded.
-        After the bug fix, a failed node must have status='failed', not 'running'.
-        """
-        with (
-            patch("agent.planner.executor.AgentPool", new=_make_agent_pool_class_mock()),
-            patch("agent.planner.executor.get_memory_engine"),
-            patch("agent.planner.executor.execute_step",
-                  return_value={"success": False, "stdout": "", "stderr": "failed"}),
-            patch("agent.planner.executor.execute_markdown_agent",
-                  return_value={"success": False, "stdout": "", "stderr": "failed"}),
-            patch("agent.planner.executor.get_agent",
-                  return_value=__import__("agent.selector", fromlist=["SelectionResult"]).SelectionResult("coder", 0.9, "test", None)),
-            patch("agent.planner.executor.extract_json_payload",
-                  return_value={"files": [], "commands": [], "action": "patch_file", "error": None}),
-        ):
-            from agent.planner.executor import DAGOrchestrator
-            from agent.planner.graph import TaskGraph, StepNode
+        """A node whose execution raises must end FAILED (and be reported), never stay RUNNING."""
+        from agent.planner.executor import DAGOrchestrator
+        from agent.planner.graph import StepNode, TaskGraph
 
-            orch = DAGOrchestrator(
-                workspace_dir=str(tmp_path),
-                task_id="reg-t3b",
-                max_workers=1,
-                max_steps=5,
-            )
-            graph = TaskGraph(task_id="reg-t3b")
-            node = StepNode(step_id="s0", description="Will fail", required_tools=[], dependencies=[])
-            graph.nodes["s0"] = node
-            orch.run_graph(graph)
+        def crash(node, ctx):
+            raise RuntimeError("worker exploded")
 
-        # After the fix, node status must resolve (not stay 'running')
-        assert graph.nodes["s0"].status != "running", (
-            "REGRESSION BUG 3: Failed node must not remain in 'running' state. "
-            "Original bug silently discarded failed futures."
+        statuses = []
+        orch = DAGOrchestrator(
+            workspace_dir=str(tmp_path),
+            task_id="reg-t3b",
+            max_workers=1,
+            max_retries=0,
+            node_callback=lambda nid, st: statuses.append(st),
+            step_runner=crash,
         )
+        graph = TaskGraph(task_id="reg-t3b")
+        graph.nodes["s0"] = StepNode(step_id="s0", description="Will fail")
+        orch.run_graph(graph)
+        assert graph.nodes["s0"].status == "FAILED"
+        assert statuses[-1] == "FAILED"
 
 
 # ─────────────────────────────────────────────────────────────────────────────────
 # BUG 4: Retry Status String Mismatch
 # ─────────────────────────────────────────────────────────────────────────────────
 
+
 class TestRegressionRetryStatusString:
     """
     REGRESSION: backend/workers/tasks.py (retry exception handler)
-    
+
     The original retry path set:
         task_record.status = "pending"   ← lowercase string literal!
-    
+
     The backpressure guard queried for ["CREATED", "PLANNED", "RUNNING"].
     So retried tasks in "pending" status were invisible to the guard AND
     to the frontend poller (which polled for uppercase statuses).
     Retried tasks became permanent "black holes" in the queue.
-    
+
     Fix: Use TaskStatus.CREATED enum value throughout. No raw status strings.
     """
 
@@ -326,7 +292,7 @@ class TestRegressionRetryStatusString:
         Core regression proof: after any status update, the stored value
         must be uppercase and match a valid TaskStatus enum value.
         """
-        from backend.models.sql_models import TaskRecord, TaskStatus
+        from backend.models.sql_models import TaskStatus
 
         task = seed_task(db, status="FAILED")
 
@@ -351,7 +317,14 @@ class TestRegressionRetryStatusString:
         source = path.read_text()
         tree = ast.parse(source)
 
-        forbidden_lowercase = {"pending", "running", "created", "failed", "completed", "planned"}
+        forbidden_lowercase = {
+            "pending",
+            "running",
+            "created",
+            "failed",
+            "completed",
+            "planned",
+        }
         violations = []
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -359,8 +332,8 @@ class TestRegressionRetryStatusString:
                     violations.append((node.lineno, node.value))
 
         assert violations == [], (
-            f"REGRESSION BUG 4: Found lowercase status string literals in tasks.py:\n"
-            + "\n".join(f"  line {l}: {v!r}" for l, v in violations)
+            "REGRESSION BUG 4: Found lowercase status string literals in tasks.py:\n"
+            + "\n".join(f"  line {lineno}: {v!r}" for lineno, v in violations)
             + "\nUse TaskStatus enum values instead."
         )
 

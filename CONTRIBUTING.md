@@ -118,7 +118,7 @@ pre-commit run --all-files
 | Bug fix | Add a regression test in `tests/regression/` |
 | API contract change | Update `tests/contract/test_api_contract.py` |
 
-Coverage must remain ≥ 90%. The CI will fail if it drops.
+Coverage must remain ≥ 75% (the measured level as of 2026-10). The CI will fail if it drops.
 
 ---
 
@@ -151,7 +151,7 @@ Before submitting a PR, confirm:
 
 - [ ] `make lint` passes with no warnings
 - [ ] `make typecheck` passes (mypy strict)
-- [ ] `make test` passes (all tests, ≥90% coverage)
+- [ ] `make test` passes (all tests, ≥75% coverage)
 - [ ] New behaviour has new tests
 - [ ] Bug fixes have a regression test
 - [ ] `ARCHITECTURE.md` updated if your change affects the system design

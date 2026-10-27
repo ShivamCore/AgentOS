@@ -9,11 +9,9 @@ Run with: pytest tests/perf/ --benchmark-only
 
 from __future__ import annotations
 
-import uuid
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
-
 
 pytestmark = pytest.mark.benchmark
 
@@ -25,15 +23,19 @@ class TestEndpointLatency:
         Target: p95 < 200ms on local in-memory SQLite.
         """
         from backend.api.routers.task import _limiter
+
         original_limit = _limiter._limit
         _limiter._limit = 100000  # unlimited for benchmark
 
         def submit():
-            return test_client.post("/tasks/create", json={
-                "title": "Benchmark task",
-                "description": "Single benchmark submission test",
-                "task_type": "fix_bug",
-            })
+            return test_client.post(
+                "/tasks/create",
+                json={
+                    "title": "Benchmark task",
+                    "description": "Single benchmark submission test",
+                    "task_type": "fix_bug",
+                },
+            )
 
         try:
             with patch("backend.api.routers.task.settings") as mock_cfg:
@@ -50,6 +52,7 @@ class TestEndpointLatency:
         Must complete in < 50ms for up to 50 rows.
         """
         from tests.conftest import seed_task
+
         for _ in range(10):
             seed_task(db, status="COMPLETED")
 
@@ -62,6 +65,7 @@ class TestEndpointLatency:
         With a primary key index this must be < 5ms.
         """
         from tests.conftest import seed_task
+
         task = seed_task(db, status="COMPLETED")
 
         result = benchmark(lambda: test_client.get(f"/tasks/{task.id}"))
@@ -69,7 +73,9 @@ class TestEndpointLatency:
 
 
 class TestMemoryEnginePerf:
-    def test_bench_engine_factory_repeated_calls(self, benchmark, tmp_path, monkeypatch):
+    def test_bench_engine_factory_repeated_calls(
+        self, benchmark, tmp_path, monkeypatch
+    ):
         """
         Benchmark repeated get_memory_engine() calls for the same workspace_dir.
         The lru_cache must make this O(1) — target < 1µs per call.
@@ -77,6 +83,7 @@ class TestMemoryEnginePerf:
         monkeypatch.setattr("agent.memory.engine._CHROMA_AVAILABLE", False)
 
         from agent.memory import engine as eng_mod
+
         eng_mod.get_memory_engine.cache_clear()
 
         workspace = str(tmp_path / "bench")
@@ -84,6 +91,7 @@ class TestMemoryEnginePerf:
         eng_mod.get_memory_engine(workspace)
 
         result_ids = []
+
         def repeated_lookup():
             result_ids.append(id(eng_mod.get_memory_engine(workspace)))
 
@@ -100,6 +108,7 @@ class TestMemoryEnginePerf:
         monkeypatch.setattr("agent.memory.engine._CHROMA_AVAILABLE", False)
 
         from agent.memory import engine as eng_mod
+
         eng_mod.get_memory_engine.cache_clear()
         engine = eng_mod.get_memory_engine(str(tmp_path / "noop"))
 
@@ -113,12 +122,16 @@ class TestSelectorPerf:
         Benchmark Pydantic validation of task input (before DB hit).
         ValidationError path must be < 5ms.
         """
+
         def validate_invalid():
-            return test_client.post("/tasks/create", json={
-                "title": "x",  # Too short — will fail validation
-                "description": "d" * 20,
-                "task_type": "invalid_type",
-            })
+            return test_client.post(
+                "/tasks/create",
+                json={
+                    "title": "x",  # Too short — will fail validation
+                    "description": "d" * 20,
+                    "task_type": "invalid_type",
+                },
+            )
 
         result = benchmark(validate_invalid)
         assert result.status_code == 422
@@ -132,6 +145,7 @@ class TestConcurrentSubmissions:
         Expected: all 50 return 2xx within 10 seconds total.
         """
         from backend.api.routers.task import _limiter
+
         original_limit = _limiter._limit
         _limiter._limit = 1000  # unlimited for this test
 
@@ -141,11 +155,14 @@ class TestConcurrentSubmissions:
                 mock_cfg.TASK_TIMEOUT_SECONDS = 600
                 successes = 0
                 for i in range(50):
-                    resp = test_client.post("/tasks/create", json={
-                        "title": f"Load test task {i}",
-                        "description": f"Sequential submission number {i}",
-                        "task_type": "fix_bug",
-                    })
+                    resp = test_client.post(
+                        "/tasks/create",
+                        json={
+                            "title": f"Load test task {i}",
+                            "description": f"Sequential submission number {i}",
+                            "task_type": "fix_bug",
+                        },
+                    )
                     if resp.status_code in (200, 201, 202):
                         successes += 1
         finally:

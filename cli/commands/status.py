@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import typer
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -28,19 +29,29 @@ _STATUS_COLOR = {
     "COMPLETED": "green",
     "PARTIAL_SUCCESS": "yellow",
     "FAILED": "red",
+    "TIMED_OUT": "red",
+    "CANCELLED": "magenta",
 }
 _NODE_ICON = {
-    "CREATED": "○",
+    "PENDING": "○",
+    "READY": "◌",
     "RUNNING": "◉",
     "COMPLETED": "✓",
     "FAILED": "✗",
+    "TIMED_OUT": "⏱",
+    "CANCELLED": "⊘",
+    "BLOCKED": "x",
 }
 
 
 def status(
     task_id: str = typer.Argument(..., help="Task ID returned by `agentos run`."),
-    logs: bool = typer.Option(False, "--logs", "-l", help="Also print execution logs for each step."),
-    result: bool = typer.Option(False, "--result", "-r", help="Also print the structured result summary."),
+    logs: bool = typer.Option(
+        False, "--logs", "-l", help="Also print execution logs for each step."
+    ),
+    result: bool = typer.Option(
+        False, "--result", "-r", help="Also print the structured result summary."
+    ),
 ) -> None:
     """Check the status and execution graph of a task."""
 
@@ -48,7 +59,7 @@ def status(
         detail = client.get_task(task_id)
     except APIError as e:
         console.print(f"[red]✗ {e.detail}[/red]")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
     current_status: str = detail.get("status", "UNKNOWN")
     nodes: list[dict] = detail.get("nodes", [])
@@ -76,11 +87,15 @@ def status(
         )
 
     console.print()
-    console.print(Panel(
-        table if nodes else Text("No steps yet — task may still be queued.", style="dim"),
-        title=f"[{color}]{current_status}[/{color}]  [bold]{title}[/bold]  [dim]{task_id}[/dim]",
-        border_style=color,
-    ))
+    console.print(
+        Panel(
+            table
+            if nodes
+            else Text("No steps yet — task may still be queued.", style="dim"),
+            title=f"[{color}]{current_status}[/{color}]  [bold]{title}[/bold]  [dim]{task_id}[/dim]",
+            border_style=color,
+        )
+    )
 
     # ── Execution logs ────────────────────────────────────────────────────────
     if logs:

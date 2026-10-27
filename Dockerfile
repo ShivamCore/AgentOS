@@ -35,8 +35,8 @@ ARG VCS_REF="unknown"
 ARG VERSION="dev"
 
 LABEL org.opencontainers.image.title="AgentOS" \
-      org.opencontainers.image.description="Local-first autonomous AI coding agent" \
-      org.opencontainers.image.source="https://github.com/youruser/agentos" \
+      org.opencontainers.image.description="Local-first LLM agent runner with a validated DAG scheduler" \
+      org.opencontainers.image.source="https://github.com/ShivamCore/AgentOS" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.version="${VERSION}" \
@@ -49,10 +49,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app \
     PATH="/home/appuser/.local/bin:${PATH}"
 
-# Install only the runtime system deps (no gcc, no build tools)
+# Install only the runtime system deps (no gcc, no build tools) and pick up
+# Debian security updates published since the base image was built.
 RUN apt-get update && \
+    apt-get upgrade -y --no-install-recommends && \
     apt-get install -y --no-install-recommends libpq5 curl && \
     rm -rf /var/lib/apt/lists/*
+
+# Packages are installed in the builder stage; the runtime needs no packaging
+# tools. Removing pip/setuptools also removes their vendored copies of urllib3,
+# msgpack, setuptools/pkg_resources, jaraco.context and wheel, which lag behind
+# upstream security fixes (even in the latest pip) and fail the image scan.
+RUN python -m pip uninstall -y pip setuptools wheel || true
 
 # Create non-root user (uid=1000, no login shell)
 RUN groupadd --gid 1000 appuser && \
@@ -66,7 +74,7 @@ WORKDIR /app
 COPY backend/ ./backend/
 COPY agent/ ./agent/
 COPY agents/ ./agents/
-COPY main.py .
+COPY db_migrate.py .
 COPY start.sh .
 
 # Ensure start.sh is executable

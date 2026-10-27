@@ -1,37 +1,43 @@
-from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from backend.db.database import engine, Base
-from backend.api.routers import task, system, ws, health, agents, metrics
 import logging
 import os
+
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from backend.api.routers import agents, health, metrics, system, task, ws
+from backend.db.database import engine
+from backend.db.migrations import ensure_schema
 
 logger = logging.getLogger(__name__)
 
 try:
-    from agent.llm import warmup_model, check_ollama
     from rich.console import Console
+
+    from agent.llm import check_ollama
+
     _console = Console()
     _llm_available = True
 except ImportError:
     _llm_available = False
 
-# Auto-create tables on startup
-Base.metadata.create_all(bind=engine)
+# Create tables and add any missing columns (additive only).
+ensure_schema(engine)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """FastAPI lifespan handler — replaces deprecated @app.on_event('startup')."""
     # ── Startup ───────────────────────────────────────────────────────
     if _llm_available:
         try:
             _console.print("[bold blue]AgentOS: Checking Ollama LLM...[/bold blue]")
             if not check_ollama():
-                _console.print("[bold yellow]WARNING: Ollama unreachable. LLM calls will fail until Ollama starts.[/bold yellow]")
-            else:
-                import threading
-                threading.Thread(target=warmup_model, daemon=True).start()
+                _console.print(
+                    "[bold yellow]WARNING: Ollama unreachable. LLM calls will fail until Ollama starts.[/bold yellow]"
+                )
         except Exception as ex:
             logger.exception(f"[lifespan] LLM warmup failed: {ex}")
     else:
@@ -64,5 +70,5 @@ app.include_router(metrics.router)
 
 
 @app.get("/")
-def root():
+def root() -> dict[str, str]:
     return {"status": "ok", "message": "AgentOS Backend Running"}

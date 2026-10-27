@@ -81,7 +81,7 @@ Returns full task detail including all DAG node statuses.
 }
 ```
 
-**Task status values:** `CREATED` → `RUNNING` → `COMPLETED` | `FAILED` | `CANCELLED`
+**Task status values:** `CREATED` → `RUNNING` → `COMPLETED` | `PARTIAL_SUCCESS` | `FAILED` | `CANCELLED` | `TIMED_OUT`. **Node status values:** `PENDING`, `READY`, `RUNNING`, `COMPLETED`, `FAILED`, `TIMED_OUT`, `CANCELLED`, `BLOCKED` (see `agent/lifecycle.py`).
 
 ---
 
@@ -112,9 +112,17 @@ Returns per-step execution logs in chronological order.
 
 ## Endpoint: `POST /retry/{task_id}`
 
-Re-queues a task that is in `FAILED` state. Has no effect on tasks in any other state.
+Re-queues a task in `FAILED`, `TIMED_OUT`, `CANCELLED` or `PARTIAL_SUCCESS`. Previous node rows are deleted; logs are kept. Other states return `409`. Requires `X-API-Key` when `API_KEY` is configured.
 
 **Response:** `202 Accepted` → `{ "task_id": "...", "status": "CREATED" }`
+
+---
+
+## Endpoint: `POST /tasks/{task_id}/cancel`
+
+Requests cancellation. A task that has not started becomes `CANCELLED` immediately. A running task keeps `RUNNING` until the worker observes the flag (polled every second), then ends `CANCELLED`: unstarted steps are `CANCELLED`, and in-flight steps are signalled. Terminal tasks return `409`.
+
+**Response:** `202 Accepted` → `{ "task_id": "...", "status": "CANCELLED" | "RUNNING" }`
 
 ---
 
@@ -128,15 +136,14 @@ Liveness probe. Returns `200 OK` if the process is running.
 
 ---
 
-## Endpoint: `GET /ready`
+## Endpoint: `GET /health/dependencies`
 
-Readiness probe. Returns `200 OK` only if the database and Redis connections are healthy.
+Reports whether Ollama is reachable, whether the configured model is installed, and which sandbox backend is available (`docker`, explicitly enabled `unsafe-host`, or none, meaning command steps fail closed). Always `200`; inspect the fields.
 
 ```json
-{"status": "ready", "db": "ok", "redis": "ok"}
+{"ollama": {"reachable": true, "model": "phi3.5", "model_present": true, "detail": "ok", "...": "..."},
+ "sandbox": {"backend": null, "available": false, "detail": "Docker daemon is not reachable: ..."}}
 ```
-
-Returns `503` if either dependency is unavailable.
 
 ---
 

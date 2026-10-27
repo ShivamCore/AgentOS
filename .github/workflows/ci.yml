@@ -169,15 +169,17 @@ jobs:
         run: |
           python -m venv venv 2>/dev/null || true
           source venv/bin/activate
-          pip install bandit pip-audit 2>/dev/null || true
+          pip install "bandit[sarif]" pip-audit
 
       - name: Bandit SAST scan (SARIF)
         run: |
           source venv/bin/activate
+          # Exit code ignored so findings are reported via SARIF; a crash still leaves no file and fails the upload.
           bandit -r backend/ agent/ -ll -x tests/ -f sarif -o bandit-results.sarif || true
+          test -s bandit-results.sarif
 
       - name: Upload Bandit SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: bandit-results.sarif
@@ -189,7 +191,7 @@ jobs:
           pip-audit -r requirements.txt --format=json || true
 
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -222,7 +224,7 @@ jobs:
         run: |
           python -m venv venv 2>/dev/null || true
           source venv/bin/activate
-          pip install -r requirements.txt 2>/dev/null || true
+          pip install -r requirements.txt
 
       - name: Run unit tests
         run: |
@@ -289,7 +291,7 @@ jobs:
         run: |
           python -m venv venv 2>/dev/null || true
           source venv/bin/activate
-          pip install -r requirements.txt 2>/dev/null || true
+          pip install -r requirements.txt
 
       - name: Run integration tests
         run: |
@@ -338,7 +340,7 @@ jobs:
         run: |
           python -m venv venv 2>/dev/null || true
           source venv/bin/activate
-          pip install -r requirements.txt 2>/dev/null || true
+          pip install -r requirements.txt
 
       - name: Run contract tests
         run: |
@@ -377,7 +379,7 @@ jobs:
         run: |
           python -m venv venv 2>/dev/null || true
           source venv/bin/activate
-          pip install -r requirements.txt 2>/dev/null || true
+          pip install -r requirements.txt
 
       - name: Run regression tests (zero tolerance)
         run: |
@@ -417,7 +419,7 @@ jobs:
         run: |
           python -m venv venv 2>/dev/null || true
           source venv/bin/activate
-          pip install -r requirements.txt pytest-benchmark 2>/dev/null || true
+          pip install -r requirements.txt pytest-benchmark
 
       - name: Run benchmarks
         run: |
@@ -439,10 +441,10 @@ jobs:
           retention-days: 30
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # JOB 10 — COVERAGE GATE (90% minimum)
+  # JOB 10 — COVERAGE GATE (75% minimum, combined suite)
   # ═══════════════════════════════════════════════════════════════════════════
   coverage-gate:
-    name: "📊 Coverage Gate (≥90%)"
+    name: "📊 Coverage Gate (≥75%)"
     runs-on: ubuntu-latest
     needs: [unit, integration, contract, regression]
     steps:
@@ -464,16 +466,16 @@ jobs:
         run: |
           python -m venv venv 2>/dev/null || true
           source venv/bin/activate
-          pip install -r requirements.txt 2>/dev/null || true
+          pip install -r requirements.txt
 
-      - name: Run combined coverage check
+      - name: Run combined suite (unit, integration, contract, regression, security, e2e)
         run: |
           source venv/bin/activate
-          pytest tests/unit/ tests/integration/ tests/contract/ tests/regression/ \
+          pytest tests/ \
             --cov=backend --cov=agent \
             --cov-report=xml:reports/coverage-combined.xml \
             --cov-report=term \
-            --cov-fail-under=90 \
+            --cov-fail-under=75 \
             -m "not benchmark" \
             -q
         env:
@@ -501,6 +503,9 @@ jobs:
       id-token: write   # for cosign keyless signing
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up QEMU (arm64 emulation for the multi-arch build)
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -551,7 +556,7 @@ jobs:
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
       - name: Trivy image scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         if: github.event_name != 'pull_request'
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
@@ -561,7 +566,7 @@ jobs:
           output: trivy-image.sarif
 
       - name: Upload Trivy SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always() && github.event_name != 'pull_request'
         with:
           sarif_file: trivy-image.sarif

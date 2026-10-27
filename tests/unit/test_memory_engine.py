@@ -11,28 +11,25 @@ REGRESSION PROOF: These tests prove the critical bug is dead:
 
 from __future__ import annotations
 
-import logging
-import subprocess
-import sys
-import textwrap
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from functools import lru_cache
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────────
+
 
 def _make_engine(workspace_dir: str):
     """Import fresh to avoid lru_cache pollution across tests."""
     # We must clear the lru_cache between tests to get fresh instances
     from agent.memory import engine as eng_mod
+
     eng_mod.get_memory_engine.cache_clear()
     return eng_mod.get_memory_engine(workspace_dir)
 
 
 # ── Instance isolation ────────────────────────────────────────────────────────────
+
 
 class TestEngineInstanceIsolation:
     """Prove two engines with different workspace dirs are fully independent."""
@@ -45,6 +42,7 @@ class TestEngineInstanceIsolation:
         monkeypatch.setattr("agent.memory.engine._CHROMA_AVAILABLE", False)
 
         from agent.memory import engine as eng_mod
+
         eng_mod.get_memory_engine.cache_clear()
 
         path_a = str(tmp_path / "workspace_a")
@@ -54,7 +52,9 @@ class TestEngineInstanceIsolation:
         engine_b = eng_mod.get_memory_engine(path_b)
 
         # They must be distinct objects
-        assert engine_a is not engine_b, "Two engines for different paths must be separate instances"
+        assert engine_a is not engine_b, (
+            "Two engines for different paths must be separate instances"
+        )
 
     def test_lru_cache_returns_same_instance(self, tmp_path, monkeypatch):
         """
@@ -63,19 +63,23 @@ class TestEngineInstanceIsolation:
         monkeypatch.setattr("agent.memory.engine._CHROMA_AVAILABLE", False)
 
         from agent.memory import engine as eng_mod
+
         eng_mod.get_memory_engine.cache_clear()
 
         path = str(tmp_path / "workspace_c")
         engine_1 = eng_mod.get_memory_engine(path)
         engine_2 = eng_mod.get_memory_engine(path)
 
-        assert engine_1 is engine_2, "lru_cache must return the same instance for equal workspace_dir"
+        assert engine_1 is engine_2, (
+            "lru_cache must return the same instance for equal workspace_dir"
+        )
 
     def test_workspace_dir_stored_on_instance(self, tmp_path, monkeypatch):
         """Each engine stores its own workspace_dir — not a shared reference."""
         monkeypatch.setattr("agent.memory.engine._CHROMA_AVAILABLE", False)
 
         from agent.memory import engine as eng_mod
+
         eng_mod.get_memory_engine.cache_clear()
 
         path_x = str(tmp_path / "x")
@@ -91,6 +95,7 @@ class TestEngineInstanceIsolation:
 
 # ── Concurrent isolation ──────────────────────────────────────────────────────────
 
+
 class TestConcurrentWorkerIsolation:
     """Simulate multiple Celery worker threads accessing the memory engine."""
 
@@ -102,6 +107,7 @@ class TestConcurrentWorkerIsolation:
         monkeypatch.setattr("agent.memory.engine._CHROMA_AVAILABLE", False)
 
         from agent.memory import engine as eng_mod
+
         eng_mod.get_memory_engine.cache_clear()
 
         def worker_task(i: int) -> str:
@@ -114,7 +120,9 @@ class TestConcurrentWorkerIsolation:
             results = [f.result() for f in as_completed(futures)]
 
         # All 4 workers should have distinct workspace dirs
-        assert len(set(results)) == 4, "Each worker engine must have a unique workspace_dir"
+        assert len(set(results)) == 4, (
+            "Each worker engine must have a unique workspace_dir"
+        )
 
     def test_concurrent_store_does_not_raise(self, tmp_path, monkeypatch):
         """
@@ -124,6 +132,7 @@ class TestConcurrentWorkerIsolation:
         monkeypatch.setattr("agent.memory.engine._CHROMA_AVAILABLE", False)
 
         from agent.memory import engine as eng_mod
+
         eng_mod.get_memory_engine.cache_clear()
 
         eng = eng_mod.get_memory_engine(str(tmp_path / "concurrent"))
@@ -140,6 +149,7 @@ class TestConcurrentWorkerIsolation:
 
 # ── Logging behaviour ─────────────────────────────────────────────────────────────
 
+
 class TestLoggingBehaviour:
     """Prove that exceptions are logged via logger.exception, not silently swallowed."""
 
@@ -152,6 +162,7 @@ class TestLoggingBehaviour:
         monkeypatch.setattr("agent.memory.engine._CHROMA_AVAILABLE", True)
 
         from agent.memory import engine as eng_mod
+
         eng_mod.get_memory_engine.cache_clear()
 
         mock_collection = MagicMock()
@@ -174,11 +185,14 @@ class TestLoggingBehaviour:
         call_args = mock_logger.exception.call_args
         assert "mem_" in str(call_args) or "Failed" in str(call_args[0][0])
 
-    def test_search_memory_logs_exception_on_chromadb_error(self, tmp_path, monkeypatch):
+    def test_search_memory_logs_exception_on_chromadb_error(
+        self, tmp_path, monkeypatch
+    ):
         """
         When ChromaDB raises on collection.query(), logger.exception must be called.
         """
         from agent.memory import engine as eng_mod
+
         eng_mod.get_memory_engine.cache_clear()
 
         mock_collection = MagicMock()
@@ -199,6 +213,7 @@ class TestLoggingBehaviour:
         monkeypatch.setattr("agent.memory.engine._CHROMA_AVAILABLE", True)
 
         from agent.memory import engine as eng_mod
+
         eng_mod.get_memory_engine.cache_clear()
 
         mock_collection = MagicMock()
@@ -217,6 +232,7 @@ class TestLoggingBehaviour:
 
 # ── No-op fallback behaviour ──────────────────────────────────────────────────────
 
+
 class TestNoOpFallback:
     """When ChromaDB is unavailable the engine must degrade gracefully."""
 
@@ -225,17 +241,21 @@ class TestNoOpFallback:
         monkeypatch.setattr("agent.memory.engine._CHROMA_AVAILABLE", False)
 
         from agent.memory import engine as eng_mod
+
         eng_mod.get_memory_engine.cache_clear()
 
         eng = eng_mod.LocalMemoryEngine(str(tmp_path / "noop"))
         result = eng.store_memory("a", "b", "c")
         assert result is False
 
-    def test_search_returns_empty_list_when_chroma_unavailable(self, tmp_path, monkeypatch):
+    def test_search_returns_empty_list_when_chroma_unavailable(
+        self, tmp_path, monkeypatch
+    ):
         """search_memory must return [] (not raise) when ChromaDB is absent."""
         monkeypatch.setattr("agent.memory.engine._CHROMA_AVAILABLE", False)
 
         from agent.memory import engine as eng_mod
+
         eng_mod.get_memory_engine.cache_clear()
 
         eng = eng_mod.LocalMemoryEngine(str(tmp_path / "noop2"))
@@ -247,6 +267,7 @@ class TestNoOpFallback:
         monkeypatch.setattr("agent.memory.engine._CHROMA_AVAILABLE", False)
 
         from agent.memory import engine as eng_mod
+
         eng_mod.get_memory_engine.cache_clear()
 
         eng = eng_mod.LocalMemoryEngine(str(tmp_path / "noop3"))
@@ -254,6 +275,7 @@ class TestNoOpFallback:
 
 
 # ── MemoryResult dataclass ────────────────────────────────────────────────────────
+
 
 class TestMemoryResult:
     def test_to_dict_rounds_distance(self):

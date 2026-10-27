@@ -32,7 +32,6 @@ dependencies = [
     "celery[redis]>=5.4,<6.0",
     "redis>=5.0,<6.0",
     "requests>=2.31,<3.0",
-    "chromadb>=0.5,<1.0",
     "docker>=7.1,<8.0",
     "tenacity>=8.3,<9.0",
     "python-dotenv>=1.0,<2.0",
@@ -49,12 +48,13 @@ include = ["cli*", "agent*", "backend*"]
 exclude = ["tests*", "frontend*", "workspace*"]
 
 [project.optional-dependencies]
+memory = ["chromadb>=0.5,<0.6"]
 dev = [
     # Testing
-    "pytest>=8.2,<9.0",
-    "pytest-asyncio>=0.23,<0.24",
-    "pytest-cov>=5.0,<6.0",
-    "pytest-benchmark>=4.0,<5.0",
+    "pytest>=9.0.3,<9.1",
+    "pytest-asyncio>=1.2,<2",
+    "pytest-cov>=7,<8",
+    "pytest-benchmark>=5.1,<6",
     "pytest-xdist>=3.5,<4.0",
     "pytest-mock>=3.14,<4.0",
     "httpx>=0.27,<0.28",
@@ -71,10 +71,10 @@ dev = [
     "pre-commit>=3.7,<4.0",
 ]
 test = [
-    "pytest>=8.2,<9.0",
-    "pytest-asyncio>=0.23,<0.24",
-    "pytest-cov>=5.0,<6.0",
-    "pytest-benchmark>=4.0,<5.0",
+    "pytest>=9.0.3,<9.1",
+    "pytest-asyncio>=1.2,<2",
+    "pytest-cov>=7,<8",
+    "pytest-benchmark>=5.1,<6",
     "httpx>=0.27,<0.28",
     "fakeredis>=2.21,<3.0",
     "freezegun>=1.4,<2.0",
@@ -118,6 +118,8 @@ ignore = [
     "ARG001",# unused function args are common in callback signatures
     "RET504",# unnecessary assignment before return — readability preference
     "B008",  # do not perform function calls in argument defaults (Depends)
+    "E501",  # line length is owned by the formatter (ruff format / black, 88 cols)
+    "PTH",   # os.path is used consistently; a pathlib migration is churn, not a fix
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -127,6 +129,7 @@ ignore = [
     "F841",  # unused variables common in test fixtures
     "ARG",   # unused args in test fixtures
     "DTZ",   # timezone in tests not critical
+    "SIM",   # nested with/if blocks in tests mirror the structure being asserted
 ]
 "**/__init__.py" = ["F401"]  # unused imports common in __init__
 
@@ -184,6 +187,10 @@ markers = [
     "perf: performance benchmarks",
     "benchmark: pytest-benchmark performance tests",
     "slow: tests that take > 5s",
+    "e2e: end-to-end tests through API -> worker -> scheduler -> tools",
+    "docker: requires a reachable Docker daemon and the agentos-sandbox image (skipped otherwise)",
+    "ollama: requires a running Ollama with AGENTOS_TEST_OLLAMA_MODEL installed (skipped otherwise)",
+    "unsafe_host: exercises the opt-in UnsafeHostExecutor with harmless local commands",
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -202,7 +209,8 @@ omit = [
 ]
 
 [tool.coverage.report]
-fail_under = 90
+# No global fail_under: per-suite CI jobs (unit, integration) only report coverage.
+# The threshold is enforced once, on the combined suite (CI coverage-gate, `make test`).
 show_missing = true
 skip_covered = false
 exclude_lines = [

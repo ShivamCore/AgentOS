@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+
 from pathlib import Path
 
 # ── Color codes for terminal output ─────────────────────────────────────────
@@ -90,7 +91,7 @@ def validate_env(
     missing_optional: list[str] = []
 
     # Check hardcoded required vars
-    for name, required, desc in EXPECTED_VARS:
+    for name, required, _desc in EXPECTED_VARS:
         value = os.environ.get(name)
         if value is None or value.strip() == "":
             if required:
@@ -129,7 +130,9 @@ def main() -> int:
     if missing_required:
         print(f"{RED}✗ MISSING REQUIRED variables:{RESET}")
         for var in missing_required:
-            desc = next((d for n, _, d in EXPECTED_VARS if n == var), "See .env.example")
+            desc = next(
+                (d for n, _, d in EXPECTED_VARS if n == var), "See .env.example"
+            )
             print(f"  {RED}• {var}{RESET} — {desc}")
         print()
     else:
@@ -139,7 +142,9 @@ def main() -> int:
     if missing_optional:
         print(f"\n{YELLOW}⚠ Optional variables not set (defaults will be used):{RESET}")
         for var in missing_optional:
-            desc = next((d for n, _, d in EXPECTED_VARS if n == var), "See .env.example")
+            desc = next(
+                (d for n, _, d in EXPECTED_VARS if n == var), "See .env.example"
+            )
             print(f"  {YELLOW}• {var}{RESET} — {desc}")
 
     # Security warnings
@@ -147,17 +152,23 @@ def main() -> int:
 
     origins = os.environ.get("ALLOWED_ORIGINS", "")
     if "*" in origins:
-        print(f"  {RED}✗ ALLOWED_ORIGINS contains '*' — wildcard CORS is a security risk{RESET}")
+        print(
+            f"  {RED}✗ ALLOWED_ORIGINS contains '*' — wildcard CORS is a security risk{RESET}"
+        )
     else:
         print(f"  {GREEN}✓ CORS origins are restricted{RESET}")
 
     db_url = os.environ.get("DATABASE_URL", "")
     if "password" in db_url.lower() and "localhost" not in db_url:
-        print(f"  {YELLOW}⚠ DATABASE_URL appears to contain credentials for a remote host{RESET}")
+        print(
+            f"  {YELLOW}⚠ DATABASE_URL appears to contain credentials for a remote host{RESET}"
+        )
 
     flower_pw = os.environ.get("FLOWER_PASSWORD", "changeme")
     if flower_pw == "changeme":
-        print(f"  {YELLOW}⚠ FLOWER_PASSWORD is still the default — change before exposing{RESET}")
+        print(
+            f"  {YELLOW}⚠ FLOWER_PASSWORD is still the default — change before exposing{RESET}"
+        )
     else:
         print(f"  {GREEN}✓ FLOWER_PASSWORD has been changed{RESET}")
 
@@ -166,9 +177,10 @@ def main() -> int:
     if all_ok:
         print(f"{GREEN}═══ Environment OK — ready to start ═══{RESET}")
         return 0
-    else:
-        print(f"{RED}═══ FAILED — fix missing required variables before starting ═══{RESET}")
-        return 1
+    print(
+        f"{RED}═══ FAILED — fix missing required variables before starting ═══{RESET}"
+    )
+    return 1
 
 
 if __name__ == "__main__":
