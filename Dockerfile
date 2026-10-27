@@ -56,9 +56,11 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends libpq5 curl && \
     rm -rf /var/lib/apt/lists/*
 
-# The base image ships pip 24.0 and setuptools 79 (which vendors vulnerable
-# jaraco.context and wheel). Upgrade the system copies; Trivy fails on them.
-RUN pip install --no-cache-dir --upgrade "pip>=26.2.2" "setuptools>=84.2.1"
+# Packages are installed in the builder stage; the runtime needs no packaging
+# tools. Removing pip/setuptools also removes their vendored copies of urllib3,
+# msgpack, setuptools/pkg_resources, jaraco.context and wheel, which lag behind
+# upstream security fixes (even in the latest pip) and fail the image scan.
+RUN python -m pip uninstall -y pip setuptools wheel || true
 
 # Create non-root user (uid=1000, no login shell)
 RUN groupadd --gid 1000 appuser && \
