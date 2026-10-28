@@ -500,7 +500,8 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write   # for cosign keyless signing
+      id-token: write          # for cosign keyless signing
+      security-events: write   # upload the Trivy image SARIF to code scanning
     steps:
       - uses: actions/checkout@v4
 
