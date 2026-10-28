@@ -31,9 +31,10 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: python
-          queries: |
-            security-extended
-            security-and-quality
+          # One suite (comma-separated if more are added): the newline-separated
+          # list was parsed as a single invalid name and init crashed.
+          # security-and-quality is a superset of security-extended.
+          queries: security-and-quality
           config: |
             paths-ignore:
               - venv
@@ -90,9 +91,10 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: javascript-typescript
-          queries: |
-            security-extended
-            security-and-quality
+          # One suite (comma-separated if more are added): the newline-separated
+          # list was parsed as a single invalid name and init crashed.
+          # security-and-quality is a superset of security-extended.
+          queries: security-and-quality
           config: |
             paths:
               - frontend/src
