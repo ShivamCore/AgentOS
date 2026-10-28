@@ -501,6 +501,7 @@ jobs:
       contents: read
       packages: write
       id-token: write   # for cosign keyless signing
+      security-events: write   # upload-sarif needs this to publish the Trivy results
     steps:
       - uses: actions/checkout@v4
 
