@@ -31,9 +31,10 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: python
-          queries: |
-            security-extended
-            security-and-quality
+          # One suite name per entry; a multi-line block is passed through as a
+          # single pack name and fails init. security-and-quality includes
+          # every security-extended query.
+          queries: security-and-quality
           config: |
             paths-ignore:
               - venv
@@ -49,8 +50,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
 
+      # No setup-python pip cache here: --no-cache-dir leaves ~/.cache/pip
+      # missing, and the cache post-step then fails the job.
       - name: Install dependencies
         run: pip install -r requirements.txt --no-cache-dir
 
@@ -71,7 +73,7 @@ jobs:
 
             Results uploaded to the [Security tab](${{ github.server_url }}/${{ github.repository }}/security/code-scanning).
 
-            - Query suite: `security-extended` + `security-and-quality`
+            - Query suite: `security-and-quality` (includes `security-extended`)
             - Commit: `${{ github.sha }}`
 
             > Any findings will appear as inline PR annotations.
@@ -90,9 +92,10 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: javascript-typescript
-          queries: |
-            security-extended
-            security-and-quality
+          # One suite name per entry; a multi-line block is passed through as a
+          # single pack name and fails init. security-and-quality includes
+          # every security-extended query.
+          queries: security-and-quality
           config: |
             paths:
               - frontend/src
