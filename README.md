@@ -138,8 +138,9 @@ AGENTOS_TEST_OLLAMA_MODEL=phi3.5 pytest -m ollama
 | Check | Result | How it was established |
 |---|---|---|
 | `pytest -q` | 288 passed, 9 skipped | Run locally on 2026-10-28 (macOS arm64, Python 3.12). Skips: 5 need Docker, 3 need opt-in Ollama, 1 Linux-only rlimit. |
-| Lint, type check, security scan, unit/integration/contract/regression/perf tests, coverage gate (≥ 75%) | Passing | GitHub Actions [`ci.yml`](.github/workflows/ci.yml) on `main` |
-| Docker build and image scan job | Failing on `main` | The Trivy SARIF upload lacks the `security-events` permission; the fix is in an open PR |
+| Lint, type check, security scan, unit/integration/contract/regression/perf tests, coverage gate (≥ 75%) | Passing | GitHub Actions [`ci.yml`](.github/workflows/ci.yml), every job green on `main` at `3710cbd` |
+| Docker build and image scan job | Passing | Previously failed: the job declares its own `permissions`, which replaces the workflow-level block, and it omitted `security-events: write` — so the Trivy SARIF upload was refused. Fixed in #4. |
+| CodeQL, Semgrep, Gitleaks, OSV ([`codeql.yml`](.github/workflows/codeql.yml)) | Passing | Previously failed at `codeql database init`: a newline-separated `queries:` block reaches the CLI as one pack name (`A fatal error occurred: security-extended`). One suite name is passed now. |
 | Coverage of `agent` + `backend` (line + branch) | 76.75% | Recorded in [`docs/testing.md`](docs/testing.md) |
 
 What each layer covers is described in [`docs/testing.md`](docs/testing.md).
