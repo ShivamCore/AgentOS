@@ -85,22 +85,41 @@ async def stream_logs(websocket: WebSocket, task_id: str, last_seq: int = -1) ->
     await r.close()
 
 
+def _allowed_origins() -> set[str]:
+    origins = settings.ALLOWED_ORIGINS
+    if isinstance(origins, str):
+        origins = origins.split(",")
+    return {o.strip().rstrip("/") for o in origins if o.strip()}
+
+
 def terminal_refusal(websocket: WebSocket) -> str | None:
     """
     The web terminal runs arbitrary shell commands on the host as the API's
     user. It is refused unless explicitly enabled, the client is on loopback,
-    and (when API_KEY is configured) the key is presented.
+    a browser client comes from an allowed origin, and (when API_KEY is
+    configured) the key is presented in the X-API-Key header.
     Returns the refusal reason, or None if the connection is allowed.
+
+    The loopback check alone does not stop a malicious web page: browsers do
+    not apply CORS to WebSockets, so any page the user visits can open
+    ws://127.0.0.1/ws/terminal and the connection arrives from loopback. A
+    browser always sends Origin on a WebSocket handshake, so checking it
+    against ALLOWED_ORIGINS closes that path; non-browser clients (CLI tools)
+    send no Origin and are still bound by the other checks.
+
+    The key is accepted only as a header. A query parameter would land in
+    access logs and browser history.
     """
     if os.getenv(TERMINAL_ENV_FLAG) != "1":
         return f"web terminal is disabled (set {TERMINAL_ENV_FLAG}=1)"
     host = websocket.client.host if websocket.client else ""
     if host not in _LOOPBACK:
         return "web terminal only accepts loopback connections"
+    origin = websocket.headers.get("origin")
+    if origin is not None and origin.rstrip("/") not in _allowed_origins():
+        return f"origin {origin!r} is not in ALLOWED_ORIGINS"
     if settings.API_KEY:
-        presented = websocket.headers.get("x-api-key") or websocket.query_params.get(
-            "api_key", ""
-        )
+        presented = websocket.headers.get("x-api-key", "")
         if not hmac.compare_digest(presented, settings.API_KEY):
             return "missing or invalid API key"
     return None
