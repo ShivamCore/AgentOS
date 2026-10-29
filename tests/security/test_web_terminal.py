@@ -50,9 +50,43 @@ def test_enabled_requires_api_key_when_configured(monkeypatch):
     assert (
         ws_mod.terminal_refusal(fake_ws("127.0.0.1", {"x-api-key": "s3cret"})) is None
     )
+    # A query-string key would end up in access logs; only the header counts.
+    assert "API key" in ws_mod.terminal_refusal(
+        fake_ws("127.0.0.1", query={"api_key": "s3cret"})
+    )
+
+
+def test_enabled_refuses_foreign_browser_origin(monkeypatch):
+    # A malicious page's WebSocket arrives from loopback; its Origin gives it away.
+    monkeypatch.setenv(ws_mod.TERMINAL_ENV_FLAG, "1")
+    monkeypatch.setattr(ws_mod.settings, "API_KEY", None)
+    monkeypatch.setattr(ws_mod.settings, "ALLOWED_ORIGINS", ["http://localhost:3000"])
+    assert "origin" in ws_mod.terminal_refusal(
+        fake_ws("127.0.0.1", {"origin": "https://evil.example"})
+    )
+    assert "origin" in ws_mod.terminal_refusal(fake_ws("127.0.0.1", {"origin": "null"}))
     assert (
-        ws_mod.terminal_refusal(fake_ws("127.0.0.1", query={"api_key": "s3cret"}))
+        ws_mod.terminal_refusal(
+            fake_ws("127.0.0.1", {"origin": "http://localhost:3000"})
+        )
         is None
+    )
+    assert (
+        ws_mod.terminal_refusal(
+            fake_ws("127.0.0.1", {"origin": "http://localhost:3000/"})
+        )
+        is None
+    )
+    # Non-browser clients send no Origin and are bound by the other checks.
+    assert ws_mod.terminal_refusal(fake_ws("127.0.0.1")) is None
+
+
+def test_allowed_origin_still_needs_api_key_when_configured(monkeypatch):
+    monkeypatch.setenv(ws_mod.TERMINAL_ENV_FLAG, "1")
+    monkeypatch.setattr(ws_mod.settings, "API_KEY", "s3cret")
+    monkeypatch.setattr(ws_mod.settings, "ALLOWED_ORIGINS", ["http://localhost:3000"])
+    assert "API key" in ws_mod.terminal_refusal(
+        fake_ws("127.0.0.1", {"origin": "http://localhost:3000"})
     )
 
 
